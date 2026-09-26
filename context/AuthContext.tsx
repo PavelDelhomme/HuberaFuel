@@ -17,6 +17,13 @@ import {
 } from '@/lib/api';
 import { applySnapshot, hasLocalUserData, normalizeSnapshot } from '@/lib/dataSnapshot';
 import { saveLocalBackup, refreshFromCloud, syncPreferNewer, forcePushLocalToCloud, type SyncPreferResult } from '@/lib/backup';
+import {
+  detectHuberaSession,
+  quickLoginWithHuberaId,
+  clearHuberaSession,
+  type HuberaDetectResult,
+  type HuberaQuickLoginResult,
+} from '@/lib/huberaId';
 
 type AuthContextType = {
   user: AuthUser | null;
@@ -38,6 +45,12 @@ type AuthContextType = {
   /** Pousse le local vers le cloud sans tirer (appareil source). */
   pushLocalNow: () => Promise<{ ok: boolean; reason: string }>;
   applySession: (token: string, user: AuthUser, refreshToken?: string | null) => Promise<void>;
+  /** Hubera ID SSO: detected session (email to continue with) */
+  huberaIdDetected: HuberaDetectResult | null;
+  /** Hubera ID SSO: check for existing cross-app session */
+  checkHuberaIdSession: () => Promise<HuberaDetectResult | null>;
+  /** Hubera ID SSO: quick login with detected session */
+  continueWithHuberaId: () => Promise<boolean>;
 };
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -49,6 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [pendingRegistrations, setPendingRegistrations] = useState<PendingRegistrationSummary[]>(
     []
   );
+  const [huberaIdDetected, setHuberaIdDetected] = useState<HuberaDetectResult | null>(null);
   const wasOnlineRef = useRef<boolean | null>(null);
   const syncDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -263,6 +277,65 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  const checkHuberaIdSession = useCallback(async (): Promise<HuberaDetectResult | null> => {
+    try {
+      const token = await getToken();
+      if (token) return null;
+
+      const detected = await detectHuberaSession();
+      setHuberaIdDetected(detected.found ? detected : null);
+      return detected.found ? detected : null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const continueWithHuberaId = useCallback(async (): Promise<boolean> => {
+    try {
+      const result = await quickLoginWithHuberaId();
+      if (!result) return false;
+
+      const next: AuthUser = {
+        id: result.userId,
+        email: result.email,
+        name: result.email.split('@')[0],
+        isManager: false,
+        huberaLink: {
+          cloudity_email: result.email,
+          cloudity_user_id: result.userId,
+          linked_at: new Date().toISOString(),
+        },
+      };
+
+      await setSession(result.accessToken, next, result.refreshToken);
+      setUser(next);
+      setHuberaIdDetected(null);
+
+      try {
+        await syncPreferNewer();
+      } catch {
+        /* offline */
+      }
+
+      try {
+        await refreshMe();
+      } catch {
+        /* ignore */
+      }
+
+      return true;
+    } catch (error) {
+      console.error('[HuberaID] continueWithHuberaId error:', error);
+      return false;
+    }
+  }, [refreshMe]);
+
+  useEffect(() => {
+    if (!user && !loading) {
+      void checkHuberaIdSession();
+    }
+  }, [user, loading, checkHuberaIdSession]);
+
   return (
     <AuthContext.Provider
       value={{
@@ -278,6 +351,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         refreshCloudNow,
         pushLocalNow,
         applySession,
+        huberaIdDetected,
+        checkHuberaIdSession,
+        continueWithHuberaId,
       }}
     >
       {children}

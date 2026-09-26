@@ -7,6 +7,7 @@ import {
   Platform,
   ScrollView,
   Linking,
+  TouchableOpacity,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
@@ -19,7 +20,7 @@ import { API_URL, forgotPassword } from '@/lib/api';
 import { getAppFlavor } from '@/lib/appFlavor';
 
 export default function AuthScreen() {
-  const { login, register } = useAuth();
+  const { login, register, huberaIdDetected, continueWithHuberaId } = useAuth();
   const { refresh } = useApp();
   const { colors } = useTheme();
   const flavor = getAppFlavor();
@@ -30,6 +31,7 @@ export default function AuthScreen() {
   const [name, setName] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [loading, setLoading] = useState(false);
+  const [huberaLoading, setHuberaLoading] = useState(false);
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
 
@@ -38,6 +40,25 @@ export default function AuthScreen() {
       setEmail(flavor.defaultLoginEmail);
     }
   }, [flavor.defaultLoginEmail, email]);
+
+  const handleContinueWithHuberaId = async () => {
+    setError('');
+    setInfo('');
+    setHuberaLoading(true);
+    try {
+      const success = await continueWithHuberaId();
+      if (success) {
+        await refresh();
+        router.replace('/' as never);
+      } else {
+        setError('Connexion Hubera ID impossible. Essayez avec email/mot de passe.');
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erreur Hubera ID');
+    } finally {
+      setHuberaLoading(false);
+    }
+  };
 
   const submit = async () => {
     setError('');
@@ -109,6 +130,25 @@ export default function AuthScreen() {
             ? `Connexion cloud (sync). Serveur : ${API_URL}`
             : 'Compte utilisateur standard (pas admin). Code d’invitation requis. Un email de validation sera envoyé ; un gestionnaire peut aussi valider depuis Administration.'}
         </Text>
+        {mode === 'login' && huberaIdDetected?.found && huberaIdDetected.email && (
+          <View style={[styles.huberaIdBanner, { backgroundColor: '#4F46E5' + '15', borderColor: '#4F46E5' }]}>
+            <Text style={{ color: '#4F46E5', fontWeight: '600', fontSize: 14, marginBottom: 8 }}>
+              Compte Hubera ID détecté
+            </Text>
+            <TouchableOpacity
+              onPress={handleContinueWithHuberaId}
+              disabled={huberaLoading}
+              style={[styles.huberaIdButton, { backgroundColor: '#4F46E5', opacity: huberaLoading ? 0.7 : 1 }]}
+            >
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>
+                {huberaLoading ? 'Connexion...' : `Continuer avec ${huberaIdDetected.email}`}
+              </Text>
+            </TouchableOpacity>
+            <Text style={{ color: colors.textSecondary, fontSize: 11, marginTop: 8, textAlign: 'center' }}>
+              Connexion automatique via Hubera ID (SSO cross-app)
+            </Text>
+          </View>
+        )}
         {mode === 'login' && (
           <QrWebLoginPanel
             onLoggedIn={async () => {
@@ -119,7 +159,7 @@ export default function AuthScreen() {
         )}
         {mode === 'login' && (
           <Text style={{ color: colors.textSecondary, fontWeight: '700', marginBottom: 10 }}>
-            Ou avec email / mot de passe
+            {huberaIdDetected?.found ? 'Ou avec email / mot de passe' : 'Avec email / mot de passe'}
           </Text>
         )}
         {mode === 'register' && (
@@ -225,6 +265,20 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 10,
     marginBottom: 14,
+  },
+  huberaIdBanner: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    alignItems: 'center',
+  },
+  huberaIdButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    width: '100%',
+    alignItems: 'center',
   },
   sub: { fontSize: 14, marginBottom: 20, lineHeight: 20 },
 });
