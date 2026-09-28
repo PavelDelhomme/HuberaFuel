@@ -23,6 +23,8 @@ export type MapsTripControlResult = {
   tripId?: number;
   /** Pack compact pour l’onglet Trajets de Maps. */
   trips?: string;
+  trackingStarted?: boolean;
+  km?: number;
 };
 
 async function packRecentTrips(): Promise<string> {
@@ -67,6 +69,7 @@ export async function runMapsTripControl(
         message: 'Suivi Fuel déjà en cours.',
         tripId: live.id,
         trips: await packRecentTrips(),
+        trackingStarted: true,
       };
     }
     const started = await startGpsTrip({
@@ -78,9 +81,10 @@ export async function runMapsTripControl(
     if (!started.ok) return { ok: false, message: started.error };
     return {
       ok: true,
-      message: 'Suivi Fuel démarré.',
+      message: started.trackingStarted ? 'Suivi Fuel démarré.' : 'Trajet créé — GPS Fuel pas encore actif.',
       tripId: started.tripId,
       trips: await packRecentTrips(),
+      trackingStarted: started.trackingStarted,
     };
   }
 
@@ -140,7 +144,7 @@ export async function runMapsTripControl(
       distanceKm: km,
       refresh,
     });
-    return { ok: true, message: 'Trajet Fuel terminé.', tripId, trips: await packRecentTrips() };
+    return { ok: true, message: 'Trajet Fuel terminé.', tripId, trips: await packRecentTrips(), km };
   }
 
   return { ok: false, message: 'Action Maps inconnue.' };
