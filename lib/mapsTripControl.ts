@@ -1,10 +1,11 @@
 /**
  * Commandes trajet / plein reçues depuis Hubera Maps (sans rester sur l’UI Fuel).
  */
-import { getActiveTripLite, getActiveVehicle, getTripById, createFillUp } from '@/lib/database';
+import { getActiveTripLite, getActiveVehicle, getTripById, createFillUp, getTrips } from '@/lib/database';
 import { peekLiveRouteTail } from '@/lib/locationService';
 import { calculateRouteDistance } from '@/lib/calculations';
 import { applyFillUpToFuelEstimate } from '@/lib/fuelLevel';
+import { encodeMapsTripPack } from '@/lib/mapsTripList';
 import { pauseGpsTrip, resumeGpsTrip, startGpsTrip, stopGpsTripLite } from '@/lib/startFreeTrip';
 
 export type MapsTripControlInput = {
@@ -20,7 +21,14 @@ export type MapsTripControlResult = {
   ok: boolean;
   message: string;
   tripId?: number;
+  /** Pack compact pour l’onglet Trajets de Maps. */
+  trips?: string;
 };
+
+async function packRecentTrips(): Promise<string> {
+  const trips = await getTrips(undefined, { omitRoutePoints: true });
+  return encodeMapsTripPack(trips);
+}
 
 function num(v: string | undefined): number {
   const n = Number(String(v || '').replace(',', '.'));
@@ -38,8 +46,29 @@ export async function runMapsTripControl(
   const tripId = asked > 0 ? asked : live?.id;
   const vehicleId = vehicle?.id ?? live?.vehicleId ?? 0;
 
+  if (action === 'history') {
+    const trips = await packRecentTrips();
+    return {
+      ok: true,
+      message: 'Historique Fuel',
+      tripId: live?.id,
+      trips,
+    };
+  }
+
   if (action === 'start') {
     if (!vehicle) return { ok: false, message: 'Aucun véhicule Fuel actif.' };
+    if (live) {
+      if (live.isPaused) {
+        await resumeGpsTrip(live.id, refresh).catch(() => undefined);
+      }
+      return {
+        ok: true,
+        message: 'Suivi Fuel déjà en cours.',
+        tripId: live.id,
+        trips: await packRecentTrips(),
+      };
+    }
     const started = await startGpsTrip({
       vehicle,
       refresh,
@@ -51,6 +80,7 @@ export async function runMapsTripControl(
       ok: true,
       message: 'Suivi Fuel démarré.',
       tripId: started.tripId,
+      trips: await packRecentTrips(),
     };
   }
 
@@ -83,7 +113,7 @@ export async function runMapsTripControl(
     } else {
       await refresh?.();
     }
-    return { ok: true, message: 'Plein enregistré dans Fuel.', tripId };
+    return { ok: true, message: 'Plein enregistré dans Fuel.', tripId, trips: await packRecentTrips() };
   }
 
   if (!tripId) return { ok: false, message: 'Aucun trajet Fuel actif.' };
@@ -110,7 +140,7 @@ export async function runMapsTripControl(
       distanceKm: km,
       refresh,
     });
-    return { ok: true, message: 'Trajet Fuel terminé.', tripId };
+    return { ok: true, message: 'Trajet Fuel terminé.', tripId, trips: await packRecentTrips() };
   }
 
   return { ok: false, message: 'Action Maps inconnue.' };

@@ -1,6 +1,6 @@
 /**
  * Contrôle trajet depuis Hubera Maps :
- *   gasoiltracking://trip/control?action=pause|resume|stop|start|fill&silent=1
+ *   gasoiltracking://trip/control?action=pause|resume|stop|start|fill|history&silent=1
  */
 import { useEffect, useRef } from 'react';
 import { ActivityIndicator, Linking, View } from 'react-native';
@@ -43,6 +43,7 @@ export default function TripControlFromMaps() {
       const q = new URLSearchParams();
       if (result.tripId) q.set('tripId', String(result.tripId));
       if (result.message) q.set('msg', result.message);
+      if (result.trips) q.set('trips', result.trips);
       q.set('ok', result.ok ? '1' : '0');
       try {
         await Linking.openURL(`hubera-maps://fuel?${q.toString()}`);

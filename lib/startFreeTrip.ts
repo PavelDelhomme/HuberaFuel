@@ -179,7 +179,10 @@ export async function startGpsTrip(opts: {
       }
     }
 
-    const loc = await getCurrentLocation({ fresh: true, timeoutMs: 7000 });
+    const loc = await getCurrentLocation({
+      fresh: true,
+      timeoutMs: opts.skipGauge ? 2800 : 7000,
+    });
     const startPoint = loc
       ? [
           {
@@ -201,7 +204,7 @@ export async function startGpsTrip(opts: {
           ? { latitude: loc.coords.latitude, longitude: loc.coords.longitude }
           : null,
         role: 'origin',
-        geocodeTimeoutMs: 2000,
+        geocodeTimeoutMs: opts.skipGauge ? 1 : 2000,
       });
       originName = origin.displayName;
     } catch {
