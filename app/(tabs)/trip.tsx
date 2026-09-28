@@ -58,6 +58,7 @@ import {
   openGoogleMapsSearch,
   peekLiveRouteTail,
   peekLiveTripId,
+  appendForcedLocation,
 } from '@/lib/locationService';
 import {
   seedLiveTripBuffer,
@@ -125,6 +126,10 @@ import {
   type TripHistoryFilter,
 } from '@/lib/tripHistoryNav';
 import { downsampleRoute } from '@/lib/routeGeometry';
+import {
+  extendRecordedTripEnds,
+  isResumableZombieTrip,
+} from '@/lib/extendTripEnds';
 import { preloadHistoryMaps } from '@/lib/tripMapCache';
 import {
   getRecentDestinations,
@@ -1052,10 +1057,17 @@ export default function TripScreen() {
       criticalStationAlertedRef.current = false;
 
       await stopBackgroundTracking();
-      await clearLiveTripBuffer();
-      await stopActiveTrips();
+      const recent = await getTrips(activeVehicle.id, {
+        includeRejected: true,
+        omitRoutePoints: true,
+      });
+      const zombie = recent.find((t) => isResumableZombieTrip(t)) || null;
+      if (!zombie) {
+        await clearLiveTripBuffer();
+        await stopActiveTrips();
+      }
       const loc = await getCurrentLocation({ fresh: true });
-      const startPoint = loc
+      let startPoint = loc
         ? [
             {
               latitude: loc.coords.latitude,
@@ -1194,7 +1206,37 @@ export default function TripScreen() {
 
       const destName = effectiveMode === 'nav' ? destLabel : undefined;
 
-      const tripId = await createTrip({
+      let tripId: number;
+      if (zombie) {
+        const full = await getTripById(zombie.id);
+        const oldPts = parseRoutePoints(full?.routePoints || '[]');
+        if (startPoint.length && oldPts.length) {
+          const lastOld = oldPts[oldPts.length - 1];
+          const extra = startPoint[0];
+          const same =
+            lastOld &&
+            Math.abs(lastOld.latitude - extra.latitude) < 1e-5 &&
+            Math.abs(lastOld.longitude - extra.longitude) < 1e-5;
+          startPoint = same ? oldPts : [...oldPts, extra];
+        } else if (oldPts.length) {
+          startPoint = oldPts;
+        }
+        const cleaned = (full?.note || zombie.note || '')
+          .replace(/\s*\[clôturé auto: zombie\]/gi, '')
+          .trim();
+        await updateTrip(zombie.id, {
+          isActive: true,
+          isPaused: false,
+          status: 'confirmed',
+          endTime: null,
+          originName: full?.originName || originName,
+          destinationName: destName || full?.destinationName || undefined,
+          routePoints: JSON.stringify(startPoint),
+          note: cleaned || undefined,
+        });
+        tripId = zombie.id;
+      } else {
+        tripId = await createTrip({
         vehicleId: activeVehicle.id,
         startTime: new Date().toISOString(),
         endTime: null,
@@ -1221,6 +1263,7 @@ export default function TripScreen() {
               .filter(Boolean)
               .join(' · ') || undefined,
       });
+      }
 
       if (startFuel != null) {
         await recordFuelGaugeReading({
@@ -1474,6 +1517,12 @@ export default function TripScreen() {
         /* GPS déjà arrêté */
       }
       try {
+        const loc = await getCurrentLocation({ fresh: true, timeoutMs: 8000 });
+        if (loc) await appendForcedLocation(finishedId, loc);
+      } catch {
+        /* dernier fix optionnel */
+      }
+      try {
         await persistLiveRoute(finishedId);
         await flushTripUpdates();
       } catch {
@@ -1507,7 +1556,31 @@ export default function TripScreen() {
       }
       setShortTripPrompt(false);
 
-      const pts = parseRoutePoints(compactRoutePointsJson(trip.routePoints || '[]'));
+      let pts = parseRoutePoints(compactRoutePointsJson(trip.routePoints || '[]'));
+      try {
+        const places = await getPlaces();
+        const ext = await extendRecordedTripEnds({
+          points: pts,
+          places,
+          fetchRoute: async (from, to) => {
+            const r = await fetchDrivingRoute(from, to);
+            return r?.coordinates?.length ? { coordinates: r.coordinates } : null;
+          },
+        });
+        if (ext.prepended || ext.appended) {
+          pts = ext.points;
+          const routeJson = JSON.stringify(pts);
+          trip = {
+            ...trip,
+            routePoints: routeJson,
+            distanceKm: calculateRouteDistance(routeJson),
+            originName: ext.originName || trip.originName,
+            destinationName: ext.destName || trip.destinationName,
+          };
+        }
+      } catch {
+        /* GPS brut conservé */
+      }
       const last = pts.length > 0 ? pts[pts.length - 1] : userLocation;
 
       let destName = trip.destinationName?.trim();

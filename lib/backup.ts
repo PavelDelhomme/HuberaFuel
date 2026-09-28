@@ -11,7 +11,7 @@ import { prepareSnapshotForPush, slimSnapshotAggressive, snapshotContentHash } f
 import { getActiveTripLite, stopActiveTrips } from '@/lib/database';
 import { finalizeStaleActiveTrip } from '@/lib/finalizeStaleTrip';
 import { decideSyncAction } from '@/lib/syncDecision';
-import { stopBackgroundTracking } from '@/lib/locationService';
+import { isBackgroundTrackingLive, stopBackgroundTracking } from '@/lib/locationService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 /**
@@ -23,15 +23,25 @@ async function resolveActiveTripForSync(opts?: {
   /** Pull explicite : ne jamais tuer un trajet récent */
   neverKillRecent?: boolean;
 }): Promise<boolean> {
-  await finalizeStaleActiveTrip();
+  let trackingLive = false;
+  try {
+    trackingLive = await isBackgroundTrackingLive();
+  } catch {
+    trackingLive = false;
+  }
+  await finalizeStaleActiveTrip({ trackingLive });
   let live = await getActiveTripLite();
   if (!live?.isActive) return false;
 
   const startMs = Date.parse(live.startTime || '');
   const ageMs = Number.isFinite(startMs) ? Date.now() - startMs : 0;
   const tiny = (live.distanceKm || 0) < 0.5;
-  const staleTiny = tiny && ageMs > 30 * 60 * 1000;
+  const staleTiny = tiny && ageMs > 45 * 60 * 1000;
   const oldGhost = ageMs > 90 * 60 * 1000;
+
+  if (trackingLive && tiny && !oldGhost) {
+    return true;
+  }
 
   if (!opts?.neverKillRecent && (staleTiny || oldGhost)) {
     await stopActiveTrips();

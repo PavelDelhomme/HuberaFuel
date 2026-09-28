@@ -306,6 +306,52 @@ async function hasOsLocationUpdates(): Promise<boolean> {
   }
 }
 
+export async function isBackgroundTrackingLive(): Promise<boolean> {
+  return hasOsLocationUpdates();
+}
+
+/** Dernier fix même filtré (Terminer) — évite de couper l’arrivée. */
+export async function appendForcedLocation(
+  tripId: number,
+  loc: Location.LocationObject
+): Promise<void> {
+  const lat = loc.coords.latitude;
+  const lon = loc.coords.longitude;
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+  let vehicleId =
+    livePointsCache?.tripId === tripId ? livePointsCache.vehicleId : 0;
+  const points = await loadLivePoints(tripId);
+  if (!vehicleId) {
+    try {
+      const t = await getTripById(tripId);
+      vehicleId = t?.vehicleId || 0;
+    } catch {
+      vehicleId = 0;
+    }
+  }
+  const entry: RoutePoint = {
+    latitude: Math.round(lat * 1e6) / 1e6,
+    longitude: Math.round(lon * 1e6) / 1e6,
+    timestamp: loc.timestamp || Date.now(),
+  };
+  const spd = loc.coords.speed;
+  if (spd != null && Number.isFinite(spd) && spd >= 0) {
+    entry.speed = Math.round(spd * 10) / 10;
+  }
+  const last = points[points.length - 1];
+  if (
+    last &&
+    last.latitude === entry.latitude &&
+    last.longitude === entry.longitude
+  ) {
+    last.timestamp = entry.timestamp;
+    if (entry.speed != null) last.speed = entry.speed;
+  } else {
+    points.push(entry);
+  }
+  await persistLivePoints(tripId, vehicleId, points);
+}
+
 async function ensureForegroundWatch(): Promise<void> {
   if (Platform.OS === 'web' || foregroundWatch) return;
   try {

@@ -7,11 +7,15 @@ import { getActiveTrip, updateTrip } from '@/lib/database';
 import { parseRoutePoints } from '@/lib/calculations';
 
 const MAX_AGE_MS = 8 * 60 * 60 * 1000;
-const STALE_POINT_MS = 20 * 60 * 1000;
+/** Aligné sur le commentaire historique (45 min) — 20 min coupait le départ Guerche. */
+export const STALE_POINT_MS = 45 * 60 * 1000;
 const TINY_KM = 0.5;
-const TINY_MIN_AGE_MS = 15 * 60 * 1000;
+export const TINY_MIN_AGE_MS = 45 * 60 * 1000;
 
-export async function finalizeStaleActiveTrip(): Promise<boolean> {
+export async function finalizeStaleActiveTrip(opts?: {
+  /** FGS encore vivant : ne pas tuer un 0 km (GPS sourd / Freecess). */
+  trackingLive?: boolean;
+}): Promise<boolean> {
   const trip = await getActiveTrip();
   if (!trip?.isActive) return false;
 
@@ -27,6 +31,9 @@ export async function finalizeStaleActiveTrip(): Promise<boolean> {
   const tiny = (trip.distanceKm || 0) < TINY_KM;
   const veryOld = ageMs > MAX_AGE_MS;
 
+  if (!veryOld && opts?.trackingLive) {
+    return false;
+  }
   if (!veryOld && !(tiny && pointStale && ageMs > TINY_MIN_AGE_MS)) {
     return false;
   }

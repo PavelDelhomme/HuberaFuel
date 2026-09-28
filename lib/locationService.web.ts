@@ -173,6 +173,17 @@ export async function persistLiveRoute(_tripId?: number): Promise<void> {
   await flushPending();
 }
 
+export async function isBackgroundTrackingLive(): Promise<boolean> {
+  return watchId != null;
+}
+
+export async function appendForcedLocation(
+  _tripId: number,
+  _loc: Location.LocationObject
+): Promise<void> {
+  await flushPending();
+}
+
 export function seedLivePointsCache(
   _tripId: number,
   _vehicleId: number,

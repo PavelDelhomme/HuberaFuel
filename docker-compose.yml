@@ -7,7 +7,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: gasoil-tracking-web:1.4.153
+    image: gasoil-tracking-web:1.4.154
     container_name: gasoil-tracking-web
     restart: unless-stopped
     expose:
@@ -21,13 +21,13 @@ services:
     labels:
       - "com.gasoiltracking.project=gasoil-tracking"
       - "com.gasoiltracking.service=web"
-      - "com.gasoiltracking.version=1.4.153"
+      - "com.gasoiltracking.version=1.4.154"
 
   api:
     build:
       context: ./api
       dockerfile: Dockerfile
-    image: gasoil-tracking-api:1.4.153
+    image: gasoil-tracking-api:1.4.154
     container_name: gasoil-tracking-api
     restart: unless-stopped
     expose:
@@ -37,7 +37,7 @@ services:
       DATA_DIR: /data
       JWT_SECRET: ${JWT_SECRET:-change-me-gasoil-tracking-prod}
       PUBLIC_URL: ${PUBLIC_URL:-https://fuel.hubera.cloud}
-      APP_VERSION: ${APP_VERSION:-1.4.153}
+      APP_VERSION: ${APP_VERSION:-1.4.154}
       MIN_APP_VERSION: ${MIN_APP_VERSION:-1.0.0}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@delhomme.ovh}
       PERSONAL_MAIL: ${PERSONAL_MAIL:-}

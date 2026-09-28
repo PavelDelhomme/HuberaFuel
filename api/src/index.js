@@ -22,7 +22,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 4000);
 const DATA_DIR = process.env.DATA_DIR || './data';
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production';
-const SHIPPED_VERSION = '1.4.153';
+const SHIPPED_VERSION = '1.4.154';
 const APP_VERSION = (() => {
   const env = process.env.APP_VERSION || SHIPPED_VERSION;
   try {
