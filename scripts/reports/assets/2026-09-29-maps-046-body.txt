@@ -1,0 +1,6 @@
+Maps 0.1.46 en prod (OTA proposée, pas forcée).
+
+Fuel se pilote depuis Maps : feuille trajets + HUD + GPS Fuel en fond.
+Samsung + Blackview testés (overlay). Nothing : pas branchée, l’OTA lui sera proposée.
+
+PDF joint : captures de ce qui marche et de ce qui reste.
