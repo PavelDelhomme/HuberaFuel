@@ -16,7 +16,8 @@ import {
   type AppVersionInfo,
 } from '@/lib/api';
 import { followsProductionOta } from '@/lib/appFlavor';
-import { openExternalDownload, performSafeApkUpdate, performWebHardReload, webReloadAlreadyTried, cleanupOtaApkIfUpdated, type UpdateProgress } from '@/lib/appUpdate';
+import { openExternalDownload, performSafeApkUpdate, performWebHardReload, webReloadAlreadyTried, cleanupOtaApkIfUpdated, cancelApkUpdate, type UpdateProgress } from '@/lib/appUpdate';
+import { isMapsSilentHop } from '@/lib/mapsSilent';
 
 const SNOOZE_KEY = 'gasoil_update_snooze_v1';
 /** Soft prompt : reporter longtemps (répétable). */
@@ -149,6 +150,10 @@ export function AppUpdateProvider({ children }: { children: React.ReactNode }) {
   const checkNow = useCallback(
     async (opts?: { ignoreSnooze?: boolean }) => {
       try {
+        if (isMapsSilentHop() && opts?.ignoreSnooze !== true) {
+          setVisible(false);
+          return false;
+        }
         void cleanupOtaApkIfUpdated();
         // Variantes qa/admin/dev/preprod/feat : packages distincts — ne pas forcer
         // l’APK prod utilisateurs (mauvais applicationId).
@@ -171,12 +176,20 @@ export function AppUpdateProvider({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
-    void checkNow();
+    const t = setTimeout(() => {
+      void checkNow();
+    }, 4000);
+    return () => clearTimeout(t);
   }, [checkNow]);
 
   useEffect(() => {
+    const launchedAt = Date.now();
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void checkNow();
+      if (state === 'active') {
+        if (isMapsSilentHop()) return;
+        if (Date.now() - launchedAt < 20000) return;
+        void checkNow();
+      }
     });
     return () => sub.remove();
   }, [checkNow]);
@@ -248,35 +261,33 @@ export function AppUpdateProvider({ children }: { children: React.ReactNode }) {
   }, [info]);
 
   const snoozeLater = useCallback(async () => {
-    if (busy) return;
+    cancelApkUpdate();
+    setBusy(false);
+    setProgress(null);
     const version = info?.version || getLocalAppVersion();
     const ms = force ? FORCE_SNOOZE_MS : SNOOZE_MS;
     await writeSnooze({ version, until: Date.now() + ms });
     setVisible(false);
-  }, [force, busy, info?.version]);
+  }, [force, info?.version]);
 
   const dismiss = useCallback(() => {
-    if (busy) return;
-    // Force : reporter plutôt que fermer sans snooze (évite de rester coincé)
-    if (force) {
-      void snoozeLater();
-      return;
-    }
-    setVisible(false);
-  }, [force, busy, snoozeLater]);
+    void snoozeLater();
+  }, [snoozeLater]);
 
   const openManualInstall = useCallback(async () => {
-    if (Platform.OS === 'android') {
-      await startUpdate();
-      return;
-    }
+    cancelApkUpdate();
+    setBusy(false);
     const remote = info || (await fetchAppVersion().catch(() => null));
     if (remote) {
       setInfo(remote);
-      await openExternalDownload(remote);
-      return;
+      try {
+        await openExternalDownload(remote);
+        setVisible(false);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
     }
-  }, [info, startUpdate]);
+  }, [info]);
 
   const value = useMemo(
     () => ({

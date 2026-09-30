@@ -23,6 +23,7 @@ type Props = {
   error: string | null;
   onUpdate: () => void;
   onLater: () => void;
+  onSiteInstall?: () => void;
 };
 
 export function AppUpdateModal({
@@ -34,6 +35,7 @@ export function AppUpdateModal({
   error,
   onUpdate,
   onLater,
+  onSiteInstall,
 }: Props) {
   const { colors } = useTheme();
   if (!info) return null;
@@ -92,13 +94,20 @@ export function AppUpdateModal({
 
           {!!error && <Text style={styles.error}>{error}</Text>}
 
-          {!busy && (
-            <View style={styles.actions}>
-              <Pressable onPress={onLater} style={styles.secondaryBtn}>
-                <Text style={{ color: colors.textSecondary, fontWeight: '600' }}>
-                  {force ? 'Plus tard (4 h)' : 'Plus tard (rappel 6 h)'}
+          <View style={styles.actions}>
+            <Pressable onPress={onLater} style={styles.secondaryBtn}>
+              <Text style={{ color: colors.textSecondary, fontWeight: '600' }}>
+                {busy ? 'Annuler et continuer' : 'Continuer sans installer'}
+              </Text>
+            </Pressable>
+            {onSiteInstall ? (
+              <Pressable onPress={onSiteInstall} style={styles.secondaryBtn}>
+                <Text style={{ color: colors.text, fontWeight: '700' }}>
+                  Télécharger l’APK (site)
                 </Text>
               </Pressable>
+            ) : null}
+            {!busy && (
               <Pressable
                 onPress={onUpdate}
                 style={[styles.primaryBtn, { backgroundColor: colors.accent }]}
@@ -107,8 +116,8 @@ export function AppUpdateModal({
                   {error && Platform.OS === 'android' ? 'Réessayer l’installation' : primaryLabel}
                 </Text>
               </Pressable>
-            </View>
-          )}
+            )}
+          </View>
         </View>
       </View>
     </Modal>

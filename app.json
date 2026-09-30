@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Fuel",
+    "name": "Hubera Fuel",
     "slug": "gasoil-tracking",
-    "version": "1.4.156",
+    "version": "1.4.160",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "gasoiltracking",
@@ -56,7 +56,7 @@
           "apiKey": "VOTRE_CLE_GOOGLE_MAPS_ANDROID"
         }
       },
-      "versionCode": 180
+      "versionCode": 184
     },
     "web": {
       "bundler": "metro",
@@ -115,7 +115,7 @@
       "eas": {
         "projectId": "d85bab84-0971-4266-8f8c-a37113bc7761"
       },
-      "whatsNew": "Maps : suivi libre + historique des trajets. Le GPS démarre vraiment sans quitter Maps.",
+      "whatsNew": "Maps : plus de flash splash/MAJ. Onglet Fuel = jauge, véhicule, démarrer, plein.",
       "router": {
         "origin": false
       }

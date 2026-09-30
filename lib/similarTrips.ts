@@ -67,13 +67,38 @@ function endpointsMatch(
   return sameWay || reverse;
 }
 
+function sampleRoute(trip: Trip, n = 8): { latitude: number; longitude: number }[] {
+  const pts = parseRoutePoints(trip.routePoints);
+  if (pts.length < 2) return pts;
+  if (pts.length <= n) return pts;
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const idx = Math.round((i * (pts.length - 1)) / (n - 1));
+    out.push(pts[idx]);
+  }
+  return out;
+}
+
+function pathOverlap(a: Trip, b: Trip, maxKm = 1.6): boolean {
+  const sa = sampleRoute(a);
+  const sb = sampleRoute(b);
+  if (sa.length < 3 || sb.length < 3) return false;
+  let hit = 0;
+  for (const p of sa) {
+    const ok = sb.some(
+      (q) => haversineDistance(p.latitude, p.longitude, q.latitude, q.longitude) <= maxKm
+    );
+    if (ok) hit += 1;
+  }
+  return hit / sa.length >= 0.65;
+}
+
 export function isSimilarTrip(a: Trip, b: Trip): boolean {
   if (a.id === b.id) return false;
   if (a.distanceKm < 0.5 || b.distanceKm < 0.5) return false;
-  // Distance dans ±25 %
   const ratio =
     Math.max(a.distanceKm, b.distanceKm) / Math.max(0.01, Math.min(a.distanceKm, b.distanceKm));
-  if (ratio > 1.35) return false;
+  if (ratio > 1.4) return false;
 
   const laO = normLabel(a.originName);
   const laD = normLabel(a.destinationName);
@@ -81,10 +106,12 @@ export function isSimilarTrip(a: Trip, b: Trip): boolean {
   const lbD = normLabel(b.destinationName);
   const labelHit =
     (labelsClose(laO, lbO) && labelsClose(laD, lbD)) ||
-    (labelsClose(laO, lbD) && labelsClose(laD, lbO));
+    (labelsClose(laO, lbD) && labelsClose(laD, lbO)) ||
+    (labelsClose(laD, lbD) && (!laO || !lbO || labelsClose(laO, lbO)));
 
   if (labelHit) return true;
-  return endpointsMatch(tripEnds(a), tripEnds(b));
+  if (endpointsMatch(tripEnds(a), tripEnds(b))) return true;
+  return pathOverlap(a, b);
 }
 
 export type SimilarTripStats = {

@@ -4,10 +4,12 @@
  */
 import { useEffect, useRef } from 'react';
 import { Linking, View } from 'react-native';
+import * as SplashScreen from 'expo-splash-screen';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useApp } from '@/context/AppContext';
 import { useToast } from '@/context/ToastContext';
 import { runMapsTripControl } from '@/lib/mapsTripControl';
+import { markMapsSilent } from '@/lib/mapsSilent';
 
 export default function TripControlFromMaps() {
   const params = useLocalSearchParams<{
@@ -18,15 +20,20 @@ export default function TripControlFromMaps() {
     total?: string;
     station?: string;
     dest?: string;
+    vehicleId?: string;
   }>();
   const { refresh } = useApp();
   const { showToast } = useToast();
   const ran = useRef(false);
+  const silent = params.silent === '1';
+  if (silent) {
+    markMapsSilent();
+    void SplashScreen.hideAsync().catch(() => undefined);
+  }
 
   useEffect(() => {
     if (ran.current) return;
     ran.current = true;
-    const silent = params.silent === '1';
     void (async () => {
       const result = await runMapsTripControl(
         {
@@ -36,6 +43,7 @@ export default function TripControlFromMaps() {
           total: params.total,
           station: params.station,
           dest: params.dest,
+          vehicleId: params.vehicleId,
         },
         refresh
       );
@@ -44,6 +52,7 @@ export default function TripControlFromMaps() {
       if (result.tripId) q.set('tripId', String(result.tripId));
       if (result.message) q.set('msg', result.message);
       if (result.trips) q.set('trips', result.trips);
+      if (result.snap) q.set('snap', result.snap);
       if (result.km != null && result.km > 0) q.set('km', String(Math.round(result.km * 10) / 10));
       if (result.trackingStarted === false) q.set('started', '0');
       if (result.trackingStarted === true) q.set('started', '1');
@@ -51,10 +60,11 @@ export default function TripControlFromMaps() {
       try {
         await Linking.openURL(`hubera-maps://fuel?${q.toString()}`);
       } catch {
-        if (!silent) router.replace('/(tabs)/maps' as never);
+        if (!silent) router.replace('/(tabs)' as never);
       }
+      router.replace('/(tabs)' as never);
     })();
-  }, [params, refresh, showToast]);
+  }, [params, refresh, showToast, silent]);
 
   return (
     <View style={{ flex: 1, backgroundColor: 'transparent' }} pointerEvents="none" />

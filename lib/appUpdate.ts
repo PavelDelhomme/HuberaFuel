@@ -91,6 +91,16 @@ async function launchApkInstaller(fileUri: string) {
 }
 
 let otaInFlight: Promise<void> | null = null;
+let activeDownload: FileSystem.DownloadResumable | null = null;
+let otaCancelled = false;
+
+/** Annule un téléchargement OTA en cours pour ne plus bloquer l’app. */
+export function cancelApkUpdate() {
+  otaCancelled = true;
+  const d = activeDownload;
+  activeDownload = null;
+  if (d) void d.pauseAsync().catch(() => undefined);
+}
 
 /**
  * OTA Android : cache interne (documentDirectory/ota, jamais Téléchargements).
@@ -122,6 +132,7 @@ async function performSafeApkUpdateInner(
   if (Platform.OS !== 'android') {
     throw new Error('Mise à jour APK disponible uniquement sur Android');
   }
+  otaCancelled = false;
   const apkUrl = resolveApkUrl(info);
   const remoteVc =
     info.versionCode != null && Number.isFinite(Number(info.versionCode))
@@ -181,6 +192,7 @@ async function performSafeApkUpdateInner(
         },
       },
       (evt) => {
+        if (otaCancelled) return;
         const total = evt.totalBytesExpectedToWrite || info.apkSize || 0;
         const written = evt.totalBytesWritten || 0;
         const pct = total > 0 ? written / total : 0;
@@ -194,8 +206,13 @@ async function performSafeApkUpdateInner(
         });
       }
     );
+    activeDownload = download;
 
     const result = await download.downloadAsync();
+    activeDownload = null;
+    if (otaCancelled) {
+      throw new Error('Mise à jour annulée.');
+    }
     if (!result?.uri) {
       throw new Error('Échec du téléchargement OTA');
     }
@@ -263,15 +280,12 @@ export async function cleanupOtaApkIfUpdated(): Promise<void> {
   }
 }
 
-/** Ouvre la page d’install (web / iOS). Android : jamais le lien APK brut (Téléchargements). */
+/** Page d’install indépendante (APK dans Chrome). Android aussi — fallback si l’installateur in-app bloque. */
 export async function openExternalDownload(info: AppVersionInfo) {
-  if (Platform.OS === 'android') {
-    throw new Error('Sur Android, utilisez l’installateur in-app (pas Téléchargements).');
-  }
   const url =
     Platform.OS === 'ios'
-      ? info.iosInstallUrl || info.downloadPage || info.webUrl
-      : info.downloadPage || info.webUrl;
+      ? info.iosInstallUrl || info.downloadPage || info.installPage || 'https://fuel.hubera.cloud/install'
+      : info.installPage || 'https://fuel.hubera.cloud/install';
   if (url) await Linking.openURL(url);
 }
 

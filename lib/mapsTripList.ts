@@ -56,6 +56,43 @@ export function encodeMapsTripPack(
     .join(ROW);
 }
 
+/** Jauge / garage / pleins / budget pour l’onglet Fuel de Maps. */
+export function encodeMapsFuelSnap(opts: {
+  vehicles: Array<{
+    id: number;
+    name?: string;
+    brand?: string;
+    model?: string;
+    isActive?: boolean;
+    tankCapacity?: number;
+    estimatedFuelLiters?: number | null;
+  }>;
+  fills: Array<{ date?: string; liters?: number; totalCost?: number; note?: string | null }>;
+  budget?: { amount?: number; spent?: number; name?: string } | null;
+}): string {
+  const veh = (opts.vehicles || []).slice(0, 8).map((v) => {
+    const tank = Number(v.tankCapacity) || 0;
+    const L = v.estimatedFuelLiters;
+    const pct =
+      L != null && tank > 0 ? Math.max(0, Math.min(100, Math.round((L / tank) * 100))) : -1;
+    const name = clip(v.name || `${v.brand || ''} ${v.model || ''}`.trim() || `Véhicule ${v.id}`);
+    return [v.id, name, pct, v.isActive ? 1 : 0].join(FIELD);
+  });
+  const fills = (opts.fills || []).slice(0, 8).map((f) =>
+    [
+      String(f.date || '').slice(0, 16),
+      Math.round((Number(f.liters) || 0) * 10) / 10,
+      Math.round((Number(f.totalCost) || 0) * 100) / 100,
+      clip(String(f.note || '').replace(/^Maps · /, '')),
+    ].join(FIELD)
+  );
+  const b = opts.budget;
+  const bud = b
+    ? [Math.round(Number(b.amount) || 0), Math.round(Number(b.spent) || 0), clip(b.name)].join(FIELD)
+    : '';
+  return ['V', veh.join(ROW), 'F', fills.join(ROW), 'B', bud].join('||');
+}
+
 export function decodeMapsTripPack(raw: string | null | undefined): MapsTripPackItem[] {
   const s = String(raw || '').trim();
   if (!s) return [];

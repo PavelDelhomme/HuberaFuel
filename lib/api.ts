@@ -634,6 +634,7 @@ export type AppVersionInfo = {
   iosInstallUrl?: string;
   releaseNotes: string;
   downloadPage: string;
+  installPage?: string;
   /** Version EAS en cours de build (pas encore téléchargeable). */
   buildingVersion?: string | null;
   buildingSince?: string | null;

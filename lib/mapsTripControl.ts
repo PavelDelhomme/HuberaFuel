@@ -1,11 +1,22 @@
 /**
  * Commandes trajet / plein reçues depuis Hubera Maps (sans rester sur l’UI Fuel).
  */
-import { getActiveTripLite, getActiveVehicle, getTripById, createFillUp, getTrips } from '@/lib/database';
+import {
+  getActiveTripLite,
+  getActiveVehicle,
+  getTripById,
+  createFillUp,
+  getTrips,
+  getVehicles,
+  getFillUps,
+  getBudgets,
+  setActiveVehicle,
+  getVehicleById,
+} from '@/lib/database';
 import { peekLiveRouteTail } from '@/lib/locationService';
 import { calculateRouteDistance } from '@/lib/calculations';
 import { applyFillUpToFuelEstimate } from '@/lib/fuelLevel';
-import { encodeMapsTripPack } from '@/lib/mapsTripList';
+import { encodeMapsTripPack, encodeMapsFuelSnap } from '@/lib/mapsTripList';
 import { pauseGpsTrip, resumeGpsTrip, startGpsTrip, stopGpsTripLite } from '@/lib/startFreeTrip';
 
 export type MapsTripControlInput = {
@@ -15,6 +26,7 @@ export type MapsTripControlInput = {
   total?: string;
   station?: string;
   dest?: string;
+  vehicleId?: string;
 };
 
 export type MapsTripControlResult = {
@@ -23,6 +35,8 @@ export type MapsTripControlResult = {
   tripId?: number;
   /** Pack compact pour l’onglet Trajets de Maps. */
   trips?: string;
+  /** Jauge / garage / pleins / budget. */
+  snap?: string;
   trackingStarted?: boolean;
   km?: number;
 };
@@ -30,6 +44,19 @@ export type MapsTripControlResult = {
 async function packRecentTrips(): Promise<string> {
   const trips = await getTrips(undefined, { omitRoutePoints: true });
   return encodeMapsTripPack(trips);
+}
+
+async function packSnap(): Promise<string> {
+  const [vehicles, fills, budgets] = await Promise.all([
+    getVehicles(),
+    getFillUps(),
+    getBudgets(),
+  ]);
+  return encodeMapsFuelSnap({
+    vehicles,
+    fills,
+    budget: budgets[0] || null,
+  });
 }
 
 function num(v: string | undefined): number {
@@ -42,19 +69,36 @@ export async function runMapsTripControl(
   refresh?: () => Promise<void>
 ): Promise<MapsTripControlResult> {
   const action = String(input.action || '').toLowerCase();
+  const askedVid = num(input.vehicleId);
+  if (askedVid > 0 && (action === 'start' || action === 'select' || action === 'vehicle')) {
+    await setActiveVehicle(askedVid);
+  }
   const live = await getActiveTripLite();
-  const vehicle = await getActiveVehicle();
+  const vehicle =
+    (askedVid > 0 ? await getVehicleById(askedVid) : null) || (await getActiveVehicle());
   const asked = num(input.tripId);
   const tripId = asked > 0 ? asked : live?.id;
   const vehicleId = vehicle?.id ?? live?.vehicleId ?? 0;
 
-  if (action === 'history') {
+  if (action === 'snapshot' || action === 'history') {
     const trips = await packRecentTrips();
+    const snap = await packSnap();
     return {
       ok: true,
-      message: 'Historique Fuel',
+      message: action === 'snapshot' ? 'Fuel' : 'Historique Fuel',
       tripId: live?.id,
       trips,
+      snap,
+    };
+  }
+
+  if (action === 'select' || action === 'vehicle') {
+    if (!vehicle) return { ok: false, message: 'Aucun véhicule Fuel.' };
+    return {
+      ok: true,
+      message: `Véhicule : ${vehicle.name || vehicle.model || vehicle.id}`,
+      snap: await packSnap(),
+      trips: await packRecentTrips(),
     };
   }
 
@@ -84,6 +128,7 @@ export async function runMapsTripControl(
       message: started.trackingStarted ? 'Suivi Fuel démarré.' : 'Trajet créé — GPS Fuel pas encore actif.',
       tripId: started.tripId,
       trips: await packRecentTrips(),
+      snap: await packSnap(),
       trackingStarted: started.trackingStarted,
     };
   }
@@ -117,7 +162,7 @@ export async function runMapsTripControl(
     } else {
       await refresh?.();
     }
-    return { ok: true, message: 'Plein enregistré dans Fuel.', tripId, trips: await packRecentTrips() };
+    return { ok: true, message: 'Plein enregistré dans Fuel.', tripId, trips: await packRecentTrips(), snap: await packSnap() };
   }
 
   if (!tripId) return { ok: false, message: 'Aucun trajet Fuel actif.' };

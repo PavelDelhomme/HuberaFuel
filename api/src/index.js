@@ -878,6 +878,7 @@ app.get('/api/version', (req, res) => {
     webUrl: pub,
     /** Hub multi-plateformes (Android APK + iPhone PWA + web) */
     downloadPage: `${pub}/download`,
+    installPage: `${pub}/install`,
     iosInstallUrl: `${pub}/download#ios`,
     releaseNotes: (() => {
       const notes = brandUserText(latest?.release_notes || '');
