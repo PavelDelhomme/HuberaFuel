@@ -36,3 +36,7 @@ invite-code.local
 ~/
 ~
 .qa-lab-password.local
+
+# Lab screenshots (PDF recaps, pas le produit)
+scripts/reports/assets/*.png
+scripts/reports/assets/*-body.txt
