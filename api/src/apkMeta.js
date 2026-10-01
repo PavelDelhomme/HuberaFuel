@@ -17,7 +17,7 @@ const TYPE_STRING = 0x03;
 const TYPE_INT_DEC = 0x10;
 const TYPE_INT_HEX = 0x11;
 
-export const PROD_ANDROID_PACKAGE = 'com.gasoiltracking.app';
+export const PROD_ANDROID_PACKAGE = 'cloud.hubera.fuel';
 
 function findEocd(buf) {
   const min = Math.max(0, buf.length - 22 - 65557);

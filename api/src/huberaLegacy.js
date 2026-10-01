@@ -10,14 +10,14 @@ export function huberaNotice() {
   return {
     brand: 'Hubera Fuel',
     channel: 'fuel',
-    keep_package: 'com.gasoiltracking.app',
+    keep_package: 'cloud.hubera.fuel',
     identity: 'cloud.hubera.fuel',
     canonical_url: 'https://fuel.hubera.cloud',
     legacy_url: 'https://gasoil-tracking.delhomme.ovh',
     message:
       'Hubera Fuel s’appelle désormais Hubera Fuel. Tes trajets, véhicules et ton compte restent. ' +
       'Nouveau domaine : fuel.hubera.cloud — gasoil-tracking.hubera.cloud et gasoil-tracking.delhomme.ovh continuent. ' +
-      'Même application Android (package inchangé).',
+      'Même application Android (package cloud.hubera.fuel).',
   };
 }
 
@@ -92,7 +92,7 @@ export function huberaLegacyStatus() {
   return {
     app: 'fuel',
     name: 'Hubera Fuel',
-    package: 'com.gasoiltracking.app',
+    package: 'cloud.hubera.fuel',
     stale_days: STALE_MS / 86400000,
     active_installs: active.length,
     legacy_installs: legacy.length,

@@ -29,7 +29,7 @@ export function getAppFlavor(): AppFlavorInfo {
     defaultLoginEmail: String(e.defaultLoginEmail || ''),
     followsProdOta: Boolean(e.followsProdOta),
     androidPackage:
-      Constants.expoConfig?.android?.package || 'com.gasoiltracking.app',
+      Constants.expoConfig?.android?.package || 'cloud.hubera.fuel',
   };
 }
 

@@ -88,16 +88,28 @@ export async function getStoredUser() {
   return raw ? JSON.parse(raw) : null;
 }
 
-function accessExpiresSoon(token: string, skewMs = 120_000): boolean {
+function accessExpMs(token: string): number | null {
   try {
     const mid = token.split('.')[1];
-    if (!mid) return true;
+    if (!mid) return null;
     const json = JSON.parse(atob(mid.replace(/-/g, '+').replace(/_/g, '/')));
-    if (!json.exp) return false;
-    return json.exp * 1000 - Date.now() < skewMs;
+    if (!json.exp) return null;
+    return json.exp * 1000;
   } catch {
-    return true;
+    return null;
   }
+}
+
+function accessExpiresSoon(token: string, skewMs = 120_000): boolean {
+  const exp = accessExpMs(token);
+  if (exp == null) return true;
+  return exp - Date.now() < skewMs;
+}
+
+function accessFullyExpired(token: string, skewMs = 5_000): boolean {
+  const exp = accessExpMs(token);
+  if (exp == null) return true;
+  return exp <= Date.now() + skewMs;
 }
 
 let refreshInFlight: Promise<boolean> | null = null;
@@ -131,9 +143,16 @@ async function refreshSession(): Promise<boolean> {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        // Ne vider la session que si le serveur refuse vraiment le refresh
         if (res.status === 401 || res.status === 403) {
-          await clearSession();
+          // Un refresh parallèle a pu déjà stocker le nouveau jeton
+          const latest = await getRefreshToken();
+          if (latest && latest !== refreshToken) {
+            return true;
+          }
+          const access = await getToken();
+          if (!access || accessFullyExpired(access)) {
+            await clearSession();
+          }
         }
         return false;
       }
@@ -161,8 +180,11 @@ export async function ensureFreshAccessToken(): Promise<string | null> {
   if (!token) return null;
   if (accessExpiresSoon(token)) {
     const ok = await refreshSession();
-    if (!ok) return null;
-    token = await getToken();
+    if (ok) {
+      token = await getToken();
+    } else if (accessFullyExpired(token)) {
+      return null;
+    }
   }
   return token;
 }

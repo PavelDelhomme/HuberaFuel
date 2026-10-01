@@ -18,6 +18,8 @@ import { calculateRouteDistance } from '@/lib/calculations';
 import { applyFillUpToFuelEstimate } from '@/lib/fuelLevel';
 import { encodeMapsTripPack, encodeMapsFuelSnap } from '@/lib/mapsTripList';
 import { pauseGpsTrip, resumeGpsTrip, startGpsTrip, stopGpsTripLite } from '@/lib/startFreeTrip';
+import { getToken } from '@/lib/api';
+import { syncPreferNewer } from '@/lib/backup';
 
 export type MapsTripControlInput = {
   action?: string;
@@ -161,6 +163,13 @@ export async function runMapsTripControl(
       await pauseGpsTrip(tripId, refresh).catch(() => undefined);
     } else {
       await refresh?.();
+    }
+    try {
+      if (await getToken()) {
+        await syncPreferNewer();
+      }
+    } catch {
+      /* hors ligne : le plein reste en local, sync au prochain login */
     }
     return { ok: true, message: 'Plein enregistré dans Fuel.', tripId, trips: await packRecentTrips(), snap: await packSnap() };
   }

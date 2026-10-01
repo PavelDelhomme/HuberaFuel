@@ -104,18 +104,18 @@
 <body>
   <div class="box">
     <h1>Hubera Fuel</h1>
-    <p class="lead">Choisissez comment installer l’app — Android, iPhone (web installable) ou navigateur.</p>
+    <p class="lead">Application native — Android (APK) et iPhone (App Store / TestFlight). Pas un raccourci Safari.</p>
     <p class="ver" id="ver">Chargement…</p>
 
     <div class="channel" id="ios">
-      <h2><span class="badge ios">iPhone / iPad</span> Version web installable</h2>
-      <p>Pas besoin de l’App Store. Sur Safari :</p>
+      <h2><span class="badge ios">iPhone / iPad</span> Application native</h2>
+      <p>Hubera Fuel iOS est une vraie app Expo (<code>cloud.hubera.fuel</code>), iOS 15.1 → iOS 18, iPhone SE jusqu’à iPhone 16. Pas un site épinglé sur l’écran d’accueil.</p>
       <ol>
-        <li>Ouvrez l’app web ci-dessous</li>
-        <li>Appuyez sur <strong>Partager</strong> (carré avec flèche)</li>
-        <li>Choisissez <strong>Sur l’écran d’accueil</strong></li>
+        <li>Quand TestFlight / l’App Store est ouvert : installer depuis le lien Apple</li>
+        <li>En attendant : demander le build interne EAS (IPA signé)</li>
+        <li>Le GPS arrière-plan et les trajets Maps sont dans l’app native, pas dans Safari</li>
       </ol>
-      <a class="btn" id="openWebIos" href="/">Ouvrir l’app (iPhone)</a>
+      <a class="btn secondary" id="openWebIos" href="/app/">Ouvrir le site (secours, pas l’app)</a>
     </div>
 
     <div class="channel" id="android">
@@ -180,9 +180,8 @@
             } else {
               dl.textContent = 'APK pas encore publiée';
             }
-            var web = v.webUrl || '/';
-            document.getElementById('openWeb').href = web;
-            document.getElementById('openWebIos').href = web;
+            document.getElementById('openWeb').href = '/app/';
+            document.getElementById('openWebIos').href = '/app/';
             document.getElementById('info').textContent = v.releaseNotes || '';
             if (v.buildingVersion) {
               document.getElementById('info').textContent =

@@ -11,6 +11,7 @@ import { prepareSnapshotForPush, slimSnapshotAggressive, snapshotContentHash } f
 import { getActiveTripLite, stopActiveTrips } from '@/lib/database';
 import { finalizeStaleActiveTrip } from '@/lib/finalizeStaleTrip';
 import { decideSyncAction } from '@/lib/syncDecision';
+import { mergeUniqueFillUps } from '@/lib/fillUpMerge';
 import { isBackgroundTrackingLive, stopBackgroundTracking } from '@/lib/locationService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -255,6 +256,13 @@ export async function refreshFromCloud(): Promise<{
   const remote = await fetchSync();
   const snap = normalizeSnapshot(remote?.data);
   if (!snap) return { ok: false, reason: 'empty', updatedAt: remote?.updatedAt ?? null };
+  try {
+    const local = await collectSnapshot();
+    const mergedFills = mergeUniqueFillUps(local.fillUps || [], snap.fillUps || []);
+    if (mergedFills.added > 0) snap.fillUps = mergedFills.fills;
+  } catch {
+    /* local illisible */
+  }
   await applySnapshot(snap, 'replace');
   await saveLocalBackup(snap);
   const serverAt = remote?.updatedAt ? Date.parse(remote.updatedAt) || Date.now() : Date.now();
@@ -479,6 +487,10 @@ export async function syncPreferNewer(): Promise<SyncPreferResult> {
 
   if (action === 'pull') {
     preserveLocalFuelOnPull(local, remoteSnap);
+    const mergedFills = mergeUniqueFillUps(local.fillUps || [], remoteSnap.fillUps || []);
+    if (mergedFills.added > 0) {
+      remoteSnap.fillUps = mergedFills.fills;
+    }
     await applySnapshot(remoteSnap, 'replace');
     try {
       await repairFillUpVehiclesAndBudgets();
@@ -491,6 +503,9 @@ export async function syncPreferNewer(): Promise<SyncPreferResult> {
       lastRemoteHash: remoteHash,
       lastPushedAt: remoteServerAt || Date.now(),
     });
+    if (mergedFills.added > 0) {
+      await pushSyncSafe(await collectSnapshot());
+    }
     return 'pulled';
   }
 

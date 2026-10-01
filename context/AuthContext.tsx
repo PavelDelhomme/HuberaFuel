@@ -90,18 +90,55 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const hydrateAccountAfterLogin = useCallback(async () => {
+    try {
+      const localHas = await hasLocalUserData();
+      const remote = await fetchSync();
+      const remoteSnap = normalizeSnapshot(remote?.data);
+      const remoteVehicles = remoteSnap?.vehicles?.length || 0;
+
+      if (remoteSnap && remoteVehicles > 0 && !localHas) {
+        await applySnapshot(remoteSnap, 'replace');
+        await saveLocalBackup(remoteSnap);
+        return;
+      }
+      if (remoteSnap && remoteVehicles > 0) {
+        const result = await syncPreferNewer();
+        if (result === 'skipped' && (remoteSnap.trips?.length || 0) > 0) {
+          const stillEmpty = !(await hasLocalUserData());
+          if (stillEmpty) {
+            await applySnapshot(remoteSnap, 'replace');
+            await saveLocalBackup(remoteSnap);
+          }
+        }
+        return;
+      }
+      if (localHas && Platform.OS !== 'web') {
+        await forcePushLocalToCloud();
+        return;
+      }
+      await syncPreferNewer();
+    } catch {
+      try {
+        await saveLocalBackup();
+      } catch {
+        /* ignore */
+      }
+    }
+  }, []);
+
   useEffect(() => {
     (async () => {
       const token = await getToken();
+      const refresh = await getRefreshToken();
       const stored = await getStoredUser();
-      if (token && stored) {
+      if (stored && (token || refresh)) {
         setUser(stored);
         try {
           await refreshMe();
         } catch {
-          /* ignore */
+          /* hors ligne : on garde le compte affiché */
         }
-        // Sync / pull cloud dès le démarrage (pas seulement sur le web)
         try {
           await syncPreferNewer();
         } catch {
@@ -176,41 +213,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isManager: !!res.user.isManager,
     };
     setUser(next);
-    try {
-      const localHas = await hasLocalUserData();
-      const remote = await fetchSync();
-      const remoteSnap = normalizeSnapshot(remote?.data);
-      const remoteVehicles = remoteSnap?.vehicles?.length || 0;
-      const remoteTrips = remoteSnap?.trips?.length || 0;
-
-      // Toujours récupérer le cloud s’il est riche et que le local est vide / quasi vide
-      if (remoteSnap && remoteVehicles > 0 && !localHas) {
-        await applySnapshot(remoteSnap, 'replace');
-        await saveLocalBackup(remoteSnap);
-      } else if (remoteSnap && remoteVehicles > 0) {
-        // Ne jamais écraser un cloud riche avec un local pauvre au login
-        const result = await syncPreferNewer();
-        if (result === 'skipped' && remoteTrips > 0) {
-          // Si sync n’a rien fait mais cloud a des trajets, s’assurer qu’on n’est pas vide
-          const stillEmpty = !(await hasLocalUserData());
-          if (stillEmpty) {
-            await applySnapshot(remoteSnap, 'replace');
-            await saveLocalBackup(remoteSnap);
-          }
-        }
-      } else if (localHas && Platform.OS !== 'web') {
-        // Cloud vide + local peuplé → pousser une fois
-        await forcePushLocalToCloud();
-      } else {
-        await syncPreferNewer();
-      }
-    } catch {
-      try {
-        await saveLocalBackup();
-      } catch {
-        /* ignore */
-      }
-    }
+    await hydrateAccountAfterLogin();
     try {
       const me = await fetchMe();
       setPendingRegistrationsCount(me.pendingRegistrationsCount || 0);
@@ -232,7 +235,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setPendingRegistrationsCount(0);
       setPendingRegistrations([]);
     }
-  }, []);
+  }, [hydrateAccountAfterLogin]);
 
   const register = useCallback(
     async (email: string, password: string, name: string, inviteCode: string) => {
@@ -259,8 +262,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (token: string, next: AuthUser, refreshToken?: string | null) => {
       await setSession(token, next, refreshToken);
       setUser(next);
+      await hydrateAccountAfterLogin();
     },
-    []
+    [hydrateAccountAfterLogin]
   );
 
   return (

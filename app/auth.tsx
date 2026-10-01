@@ -106,10 +106,10 @@ export default function AuthScreen() {
         </View>
         <Text style={[styles.sub, { color: colors.textSecondary }]}>
           {mode === 'login'
-            ? `Connexion cloud (sync). Serveur : ${API_URL}`
+            ? 'Même compte que Hubera ID / Maps : paul@delhomme.ovh (gmail aussi). Si le mot de passe Hubera ID est refusé, c’est le mot de passe Fuel.'
             : 'Compte utilisateur standard (pas admin). Code d’invitation requis. Un email de validation sera envoyé ; un gestionnaire peut aussi valider depuis Administration.'}
         </Text>
-        {mode === 'login' && (
+        {mode === 'login' && Platform.OS === 'web' && (
           <QrWebLoginPanel
             onLoggedIn={async () => {
               await refresh();
@@ -117,9 +117,17 @@ export default function AuthScreen() {
             }}
           />
         )}
+        {mode === 'login' && Platform.OS !== 'web' && (
+          <Button
+            title="Scanner un QR pour connecter cet appareil"
+            variant="outline"
+            onPress={() => router.push('/qr-login?scan=1' as never)}
+            style={{ marginBottom: 16 }}
+          />
+        )}
         {mode === 'login' && (
           <Text style={{ color: colors.textSecondary, fontWeight: '700', marginBottom: 10 }}>
-            Ou avec email / mot de passe
+            Ou email / mot de passe Hubera
           </Text>
         )}
         {mode === 'register' && (
@@ -140,7 +148,7 @@ export default function AuthScreen() {
           onChangeText={setEmail}
           autoCapitalize="none"
           keyboardType="email-address"
-          placeholder="vous@email.com"
+          placeholder="paul@delhomme.ovh"
         />
         <Input
           label="Mot de passe"

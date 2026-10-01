@@ -22,7 +22,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 4000);
 const DATA_DIR = process.env.DATA_DIR || './data';
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production';
-const SHIPPED_VERSION = '1.4.155';
+const SHIPPED_VERSION = '1.4.163';
 const APP_VERSION = (() => {
   const env = process.env.APP_VERSION || SHIPPED_VERSION;
   try {
@@ -197,8 +197,8 @@ for (const sql of [
   }
 }
 
-/** Access JWT court ; refresh opaque rotatif (révocation possible) */
-const ACCESS_TTL = process.env.JWT_ACCESS_TTL || '20m';
+/** Access JWT : 7 j par défaut (20 min faisait perdre la session Fuel à chaque coupure). */
+const ACCESS_TTL = process.env.JWT_ACCESS_TTL || '7d';
 const REFRESH_TTL_MS = Number(process.env.JWT_REFRESH_TTL_MS || 30 * 24 * 60 * 60 * 1000);
 
 function hashToken(raw) {
@@ -1081,7 +1081,7 @@ app.post('/api/auth/resend-verification', authLimiter, registerLimiter, async (r
   }
 });
 
-app.post('/api/auth/login', authLimiter, (req, res) => {
+app.post('/api/auth/login', authLimiter, async (req, res) => {
   const email = String(req.body?.email || '')
     .toLowerCase()
     .trim();
@@ -1089,9 +1089,16 @@ app.post('/api/auth/login', authLimiter, (req, res) => {
   if (!email || !password) {
     return res.status(400).json({ error: 'email et password requis' });
   }
-  const user = findUserByLoginEmail(email);
-  // message générique anti-énumération
-  if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+  let user = findUserByLoginEmail(email);
+  let passwordOk = Boolean(user && bcrypt.compareSync(password, user.password_hash));
+  if (!passwordOk) {
+    const idOk = await huberaIdPasswordOk(email, password);
+    if (idOk) {
+      user = findUserByHuberaIdentity(email);
+      passwordOk = Boolean(user);
+    }
+  }
+  if (!user || !passwordOk) {
     return res.status(401).json({ error: 'Identifiants invalides' });
   }
   if (user.email_verified === 0) {
@@ -1101,6 +1108,53 @@ app.post('/api/auth/login', authLimiter, (req, res) => {
 });
 
 const QR_LOGIN_TTL_MS = 2 * 60 * 1000;
+/** Pair un nouvel appareil (Nothing, etc.) : le lien reste cliquable 24 h. */
+const DEVICE_PAIR_TTL_MS = 24 * 60 * 60 * 1000;
+
+const HUBERA_ID_LOGIN_URLS = [
+  'https://api.cloudity.delhomme.ovh/auth/login',
+  'https://calendar.hubera.cloud/auth/login',
+  'https://contacts.hubera.cloud/auth/login',
+  'https://mail.hubera.cloud/auth/login',
+];
+
+async function huberaIdPasswordOk(email, password) {
+  for (const url of HUBERA_ID_LOGIN_URLS) {
+    try {
+      const ac = new AbortController();
+      const t = setTimeout(() => ac.abort(), 8000);
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ email, password, tenant_id: '1' }),
+        signal: ac.signal,
+      });
+      clearTimeout(t);
+      if (!r.ok) continue;
+      const j = await r.json().catch(() => null);
+      if (j && (j.access_token || j.token || j.refresh_token)) return true;
+    } catch {
+      /* hôte suivant */
+    }
+  }
+  return false;
+}
+
+function findUserByHuberaIdentity(email) {
+  const local = findUserByLoginEmail(email);
+  if (local) return local;
+  try {
+    return db
+      .prepare(
+        `SELECT u.* FROM users u
+         JOIN hubera_identity_links l ON l.user_id = u.id
+         WHERE lower(l.cloudity_email) = ? OR lower(coalesce(l.satellite_email, '')) = ?`
+      )
+      .get(email, email);
+  } catch {
+    return undefined;
+  }
+}
 
 /** Web : démarre un challenge QR (connexion site via app mobile). */
 app.post('/api/auth/qr/start', authLimiter, async (req, res) => {
@@ -1240,7 +1294,7 @@ app.post('/api/auth/qr/pair', auth, authLimiter, async (req, res) => {
     const id = uuid();
     const raw = crypto.randomBytes(32).toString('base64url');
     const now = new Date();
-    const expires = new Date(now.getTime() + QR_LOGIN_TTL_MS);
+    const expires = new Date(now.getTime() + DEVICE_PAIR_TTL_MS);
     const meta = sessionMeta(req);
     db.prepare(
       `INSERT INTO qr_login_challenges
@@ -1257,7 +1311,8 @@ app.post('/api/auth/qr/pair', auth, authLimiter, async (req, res) => {
       meta.userAgent
     );
 
-    const payload = `${requestPublicUrl(req)}/qr-login?claim=${encodeURIComponent(id)}`;
+    const pub = requestPublicUrl(req);
+    const payload = `${pub}/connect?claim=${encodeURIComponent(id)}`;
     const qrDataUrl = await QRCode.toDataURL(payload, {
       width: 280,
       margin: 2,
@@ -1268,9 +1323,10 @@ app.post('/api/auth/qr/pair', auth, authLimiter, async (req, res) => {
     res.json({
       challengeId: id,
       expiresAt: expires.toISOString(),
-      ttlSeconds: Math.round(QR_LOGIN_TTL_MS / 1000),
+      ttlSeconds: Math.round(DEVICE_PAIR_TTL_MS / 1000),
       qrPayload: payload,
       qrDataUrl,
+      connectUrl: payload,
       deepLink: `${APP_SCHEME}://qr-login?claim=${encodeURIComponent(id)}`,
       mode: 'pair',
     });
@@ -1278,6 +1334,45 @@ app.post('/api/auth/qr/pair', auth, authLimiter, async (req, res) => {
     console.error('qr-pair', e);
     res.status(500).json({ error: 'Impossible de créer le QR d’appareil' });
   }
+});
+
+/** Page d’atterrissage : ouvre Hubera Fuel sur le téléphone (Nothing, etc.). */
+app.get('/connect', (req, res) => {
+  const claim = String(req.query.claim || '').trim();
+  const pub = requestPublicUrl(req);
+  const deep = claim ? `${APP_SCHEME}://qr-login?claim=${encodeURIComponent(claim)}` : '';
+  let hint = 'Ouvre Hubera Fuel avec ce lien — tu seras connecté sur ton compte Hubera.';
+  if (!claim) {
+    hint = 'Lien incomplet. Demande un nouveau lien depuis un téléphone déjà connecté (Mon compte → Connecter un appareil).';
+  } else {
+    try {
+      const row = db.prepare('SELECT status, expires_at FROM qr_login_challenges WHERE id = ?').get(claim);
+      if (!row) hint = 'Lien inconnu. Demande un nouveau lien depuis Mon compte.';
+      else if (row.status === 'consumed') hint = 'Ce lien a déjà été utilisé. Demande-en un nouveau.';
+      else if (new Date(row.expires_at).getTime() < Date.now()) hint = 'Lien expiré (24 h). Demande-en un nouveau.';
+    } catch {
+      /* ignore */
+    }
+  }
+  res.type('html').send(`<!DOCTYPE html>
+<html lang="fr"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Connecter Hubera Fuel</title>
+<style>
+body{font-family:system-ui,sans-serif;background:#0f0f1a;color:#f1f5f9;margin:0;padding:2rem 1.25rem}
+main{max-width:26rem;margin:8vh auto}
+h1{font-size:1.4rem;margin:0 0 .5rem}
+p{color:#94a3b8;line-height:1.5}
+a.btn{display:block;text-align:center;margin-top:1.25rem;padding:14px 16px;background:#e94560;color:#fff;font-weight:700;border-radius:999px;text-decoration:none}
+.meta{font-size:.9rem;color:#cbd5e1}
+</style></head><body>
+<main>
+<p class="meta">Hubera · application indépendante</p>
+<h1>Connecter cet appareil</h1>
+<p>${hint.replace(/[<>&]/g, (c) => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))}</p>
+${deep ? `<a class="btn" href="${deep}">Ouvrir Hubera Fuel</a>` : ''}
+<p class="meta">Si l’app ne s’ouvre pas : installe-la d’abord sur <a href="${pub}/install" style="color:#e94560">fuel.hubera.cloud/install</a> puis reviens ici.</p>
+</main></body></html>`);
 });
 
 /** Rotation du refresh token → nouvel access + nouveau refresh */
@@ -1291,9 +1386,26 @@ app.post('/api/auth/refresh', authLimiter, (req, res) => {
     return res.status(401).json({ error: 'Session expirée. Reconnectez-vous.' });
   }
   if (row.revoked_at) {
-    // Réutilisation d’un token déjà tourné → révoque toute la famille (vol possible)
-    revokeRefreshFamily(row.user_id);
-    return res.status(401).json({ error: 'Session invalidée. Reconnectez-vous.' });
+    const revokedMs = new Date(row.revoked_at).getTime();
+    const race = Number.isFinite(revokedMs) && Date.now() - revokedMs < 90_000;
+    if (!race) {
+      // Réutilisation ancienne → révoque la famille (vol possible)
+      revokeRefreshFamily(row.user_id);
+      return res.status(401).json({ error: 'Session invalidée. Reconnectez-vous.' });
+    }
+    // Deux refresh en parallèle (Maps hop + Accueil) : ne pas déconnecter le téléphone.
+    const racedUser = db.prepare('SELECT * FROM users WHERE id = ?').get(row.user_id);
+    if (!racedUser) {
+      return res.status(401).json({ error: 'Session expirée. Reconnectez-vous.' });
+    }
+    const raced = issueRefreshToken(racedUser.id, sessionMeta(req));
+    return res.json({
+      token: issueAccessToken(racedUser),
+      refreshToken: raced.refreshToken,
+      expiresIn: ACCESS_TTL,
+      refreshExpiresAt: raced.refreshExpiresAt,
+      user: { id: racedUser.id, email: racedUser.email, name: racedUser.name },
+    });
   }
   if (new Date(row.expires_at).getTime() < Date.now()) {
     db.prepare('UPDATE refresh_tokens SET revoked_at = ? WHERE id = ?').run(
@@ -1941,7 +2053,7 @@ function saveRelease({ version, notes, force, file, versionCode }) {
     }
     try {
       apkSize = assertValidApkFile(file.path, {
-        packageName: 'com.gasoiltracking.app',
+        packageName: 'cloud.hubera.fuel',
         versionName: version,
         versionCode: vc,
       });

@@ -2,7 +2,7 @@
   "expo": {
     "name": "Hubera Fuel",
     "slug": "gasoil-tracking",
-    "version": "1.4.160",
+    "version": "1.4.164",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "gasoiltracking",
@@ -15,17 +15,40 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.gasoiltracking.app",
+      "bundleIdentifier": "cloud.hubera.fuel",
+      "deploymentTarget": "15.1",
+      "associatedDomains": [
+        "applinks:fuel.hubera.cloud",
+        "applinks:maps.hubera.cloud"
+      ],
       "infoPlist": {
+        "CFBundleDisplayName": "Hubera Fuel",
+        "ITSAppUsesNonExemptEncryption": false,
         "NSLocationWhenInUseUsageDescription": "Hubera Fuel utilise votre position pour suivre vos trajets et calculer la consommation en temps réel.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Hubera Fuel suit vos trajets en arrière-plan pendant la navigation pour estimer la consommation de carburant.",
+        "NSLocationAlwaysUsageDescription": "Hubera Fuel suit vos trajets en arrière-plan pendant la navigation pour estimer la consommation de carburant.",
         "NSContactsUsageDescription": "Hubera Fuel propose les adresses de vos contacts comme destinations de trajet.",
+        "NSCameraUsageDescription": "Hubera Fuel utilise la caméra pour scanner le QR de connexion et photographier le CT ou la carte grise.",
+        "NSPhotoLibraryUsageDescription": "Hubera Fuel peut joindre une photo du CT ou de la carte grise.",
         "LSApplicationQueriesSchemes": [
           "hubera-maps",
           "cloudity-maps"
         ],
         "UIBackgroundModes": [
-          "location"
+          "location",
+          "fetch"
+        ]
+      },
+      "privacyManifests": {
+        "NSPrivacyAccessedAPITypes": [
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
+            "NSPrivacyAccessedAPITypeReasons": ["CA92.1"]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryFileTimestamp",
+            "NSPrivacyAccessedAPITypeReasons": ["C617.1"]
+          }
         ]
       },
       "config": {
@@ -37,7 +60,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1a1a2e"
       },
-      "package": "com.gasoiltracking.app",
+      "package": "cloud.hubera.fuel",
       "permissions": [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
@@ -56,7 +79,26 @@
           "apiKey": "VOTRE_CLE_GOOGLE_MAPS_ANDROID"
         }
       },
-      "versionCode": 184
+      "versionCode": 188,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": false,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "fuel.hubera.cloud",
+              "pathPrefix": "/connect"
+            },
+            {
+              "scheme": "https",
+              "host": "fuel.hubera.cloud",
+              "pathPrefix": "/qr-login"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -115,7 +157,7 @@
       "eas": {
         "projectId": "d85bab84-0971-4266-8f8c-a37113bc7761"
       },
-      "whatsNew": "Maps : plus de flash splash/MAJ. Onglet Fuel = jauge, véhicule, démarrer, plein.",
+      "whatsNew": "Session Fuel qui reste connectée, sync du compte à la connexion, plein Maps poussé dans le cloud. MAJ jamais bloquante.",
       "router": {
         "origin": false
       }

@@ -17,6 +17,7 @@ import {
 } from '../fuelGaugeMath';
 import { decideSyncAction } from '../syncDecision';
 import { cheapestStationFuelPrice } from '../fuelPrices';
+import { mergeUniqueFillUps } from '../fillUpMerge';
 
 describe('compareSemver', () => {
   it('ordonne correctement', () => {
@@ -147,6 +148,25 @@ describe('decideSyncAction', () => {
         remoteW: 80,
       })
     ).toBe('pull');
+  });
+});
+
+describe('mergeUniqueFillUps', () => {
+  it('ajoute un plein Maps absent du cloud', () => {
+    const r = mergeUniqueFillUps(
+      [{ id: 9, vehicleId: 1, date: '2026-09-30T16:00:00+02:00', liters: 42.1, totalCost: 74 }],
+      [{ id: 3, vehicleId: 1, date: '2026-09-21T10:00:00Z', liters: 70, totalCost: 124.45 }]
+    );
+    expect(r.added).toBe(1);
+    expect(r.fills).toHaveLength(2);
+    expect(r.fills[1].id).toBe(4);
+    expect(r.fills[1].liters).toBe(42.1);
+  });
+  it('ne duplique pas le même ticket', () => {
+    const row = { id: 3, vehicleId: 1, date: '2026-09-30T12:00:00Z', liters: 59.3, totalCost: 104.31 };
+    const r = mergeUniqueFillUps([row], [{ ...row, id: 8 }]);
+    expect(r.added).toBe(0);
+    expect(r.fills).toHaveLength(1);
   });
 });
 

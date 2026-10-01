@@ -4,6 +4,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 // Enregistre la task GPS background le plus tôt possible (Expo TaskManager)
 import '@/lib/locationService';
 import '@/lib/mapsSilent';
+import '@/lib/mapsControlFromNative';
 import { AppProvider } from '@/context/AppContext';
 import { AuthProvider } from '@/context/AuthContext';
 import { LocaleProvider } from '@/context/LocaleContext';

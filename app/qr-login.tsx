@@ -8,6 +8,7 @@ import { View, Text, StyleSheet, Platform, Pressable, ActivityIndicator } from '
 import { router, useLocalSearchParams } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useAuth } from '@/context/AuthContext';
+import { useApp } from '@/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { Button } from '@/components/Button';
 import { InlineBackBar } from '@/components/HeaderBackButton';
@@ -36,6 +37,7 @@ function parseClaimId(raw: string): string | null {
 export default function QrLoginScreen() {
   const { colors } = useTheme();
   const { user, applySession } = useAuth();
+  const { refresh } = useApp();
   const params = useLocalSearchParams<{
     c?: string;
     challenge?: string;
@@ -58,6 +60,7 @@ export default function QrLoginScreen() {
         const res = await pollQrLogin(challengeId);
         if (res.status === 'approved' && res.token && res.user) {
           await applySession(res.token, res.user, res.refreshToken);
+          await refresh();
           notify('Connecté', res.user.email || 'Session importée');
           setMsg('OK — cet appareil est connecté.');
           setTimeout(() => router.replace('/' as never), 700);
@@ -74,7 +77,7 @@ export default function QrLoginScreen() {
         setBusy(false);
       }
     },
-    [applySession, busy]
+    [applySession, busy, refresh]
   );
 
   const approve = useCallback(

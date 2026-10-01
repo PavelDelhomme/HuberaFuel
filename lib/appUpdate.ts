@@ -18,7 +18,7 @@ export type UpdateProgress = {
   message: string;
 };
 
-const PKG = Constants.expoConfig?.android?.package || 'com.gasoiltracking.app';
+const PKG = Constants.expoConfig?.android?.package || 'cloud.hubera.fuel';
 /** FLAG_GRANT_READ_URI_PERMISSION | FLAG_GRANT_PERSISTABLE_URI_PERMISSION | FLAG_ACTIVITY_NEW_TASK */
 const INSTALL_FLAGS = 1 | 64 | 268435456;
 
