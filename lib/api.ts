@@ -688,6 +688,7 @@ export async function fetchAppVersion(): Promise<AppVersionInfo> {
   const qs = new URLSearchParams({
     clientVersion: getLocalAppVersion(),
     clientVersionCode: String(getLocalVersionCode()),
+    clientPackage: Constants.expoConfig?.android?.package || 'cloud.hubera.fuel',
     install,
     huberaAware: '1',
   });

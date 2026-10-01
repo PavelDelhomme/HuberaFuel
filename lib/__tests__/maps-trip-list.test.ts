@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decodeMapsTripPack, encodeMapsTripPack } from '@/lib/mapsTripList';
+import { decodeMapsTripPack, encodeMapsFuelSnap, encodeMapsTripPack } from '@/lib/mapsTripList';
 
 describe('mapsTripList', () => {
   it('encode / decode un historique compact', () => {
@@ -61,5 +61,19 @@ describe('mapsTripList', () => {
     const [row] = decodeMapsTripPack(pack);
     expect(row.origin).toContain('A');
     expect(row.dest).toBe('Chez toi');
+  });
+
+  it('pack snap véhicules : nom + actif du compte', () => {
+    const snap = encodeMapsFuelSnap({
+      vehicles: [
+        { id: 2, name: 'Clio', isActive: false, tankCapacity: 50, estimatedFuelLiters: 10 },
+        { id: 7, name: 'Kangoo La Guerche', isActive: true, tankCapacity: 60, estimatedFuelLiters: 30 },
+      ],
+      fills: [],
+      budget: null,
+    });
+    expect(snap.startsWith('V||')).toBe(true);
+    expect(snap).toContain('7~Kangoo La Guerche~50~1');
+    expect(snap).toContain('2~Clio~20~0');
   });
 });

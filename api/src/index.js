@@ -13,7 +13,7 @@ import nodemailer from 'nodemailer';
 import Database from 'better-sqlite3';
 import multer from 'multer';
 import QRCode from 'qrcode';
-import { compareSemver, pickLatestRelease } from './semver.js';
+import { compareSemver, pickLatestRelease, normalizeFuelPackage, FUEL_PKG_HUBERA } from './semver.js';
 import { assertApkIdentity } from './apkMeta.js';
 import { applyPersonalCommute, applyPersonalFillUp, fetchCommuteRoute } from './personalCommute.js';
 import { huberaLegacyStatus, huberaNotice, pingFromRequest } from './huberaLegacy.js';
@@ -189,12 +189,20 @@ for (const sql of [
   'ALTER TABLE app_releases ADD COLUMN apk_sha256 TEXT',
   'ALTER TABLE app_releases ADD COLUMN apk_size INTEGER',
   'ALTER TABLE app_releases ADD COLUMN version_code INTEGER',
+  'ALTER TABLE app_releases ADD COLUMN package_name TEXT',
 ]) {
   try {
     db.exec(sql);
   } catch {
     /* déjà présent */
   }
+}
+try {
+  db.exec(
+    `UPDATE app_releases SET package_name = 'com.gasoiltracking.app' WHERE package_name IS NULL OR package_name = ''`
+  );
+} catch {
+  /* ignore */
 }
 
 /** Access JWT : 7 j par défaut (20 min faisait perdre la session Fuel à chaque coupure). */
@@ -818,7 +826,10 @@ app.get('/api/version', (req, res) => {
   const rows = db
     .prepare('SELECT * FROM app_releases WHERE apk_filename IS NOT NULL')
     .all();
-  const latest = pickLatestRelease(rows);
+  const clientPkg = normalizeFuelPackage(
+    req.query.clientPackage || req.query.package || ''
+  );
+  const latest = pickLatestRelease(rows, clientPkg);
   const clientVer = String(req.query.clientVersion || '').trim();
   const clientVc = Number(req.query.clientVersionCode || 0) || 0;
   const apkOlderThanClient =
@@ -875,6 +886,7 @@ app.get('/api/version', (req, res) => {
     apkSha256: apkAvailable ? latest?.apk_sha256 || null : null,
     apkSize: apkAvailable ? latest?.apk_size || null : null,
     versionCode: apkAvailable ? latest?.version_code || null : null,
+    packageName: clientPkg,
     webUrl: pub,
     /** Hub multi-plateformes (Android APK + iPhone PWA + web) */
     downloadPage: `${pub}/download`,
@@ -1112,6 +1124,7 @@ const QR_LOGIN_TTL_MS = 2 * 60 * 1000;
 const DEVICE_PAIR_TTL_MS = 24 * 60 * 60 * 1000;
 
 const HUBERA_ID_LOGIN_URLS = [
+  'https://id.hubera.cloud/auth/login',
   'https://api.cloudity.delhomme.ovh/auth/login',
   'https://calendar.hubera.cloud/auth/login',
   'https://contacts.hubera.cloud/auth/login',
@@ -1695,6 +1708,7 @@ app.get('/api/maps/vehicles', auth, (req, res) => {
       avgConsumption: v.avgConsumption,
       licensePlate: v.licensePlate,
       isDefault: v.isDefault,
+      isActive: Boolean(v.isActive || v.isDefault),
     }));
     res.json({ vehicles });
   } catch {
@@ -2019,11 +2033,12 @@ function assertValidApkFile(filePath, expected = {}) {
   return meta.size || st.size;
 }
 
-function saveRelease({ version, notes, force, file, versionCode }) {
+function saveRelease({ version, notes, force, file, versionCode, packageName }) {
+  const pkg = normalizeFuelPackage(packageName || FUEL_PKG_HUBERA);
   const rows = db
     .prepare('SELECT * FROM app_releases WHERE apk_filename IS NOT NULL')
     .all();
-  const best = pickLatestRelease(rows);
+  const best = pickLatestRelease(rows, pkg);
   if (best && compareSemver(version, best.version) < 0) {
     unlinkQuiet(file?.path);
     return {
@@ -2053,7 +2068,7 @@ function saveRelease({ version, notes, force, file, versionCode }) {
     }
     try {
       apkSize = assertValidApkFile(file.path, {
-        packageName: 'cloud.hubera.fuel',
+        packageName: pkg,
         versionName: version,
         versionCode: vc,
       });
@@ -2069,6 +2084,7 @@ function saveRelease({ version, notes, force, file, versionCode }) {
     // Garde anti-régression : un versionCode déclaré plus bas que le précédent casse l’OTA
     // (Android refuse le « downgrade » → « package n’a pas pu être validé »).
     const bestVc = rows
+      .filter((r) => String(r.package_name || '') === pkg || (!r.package_name && pkg === 'com.gasoiltracking.app'))
       .map((r) => Number(r.version_code))
       .filter((n) => Number.isFinite(n))
       .reduce((a, b) => Math.max(a, b), 0);
@@ -2089,8 +2105,8 @@ function saveRelease({ version, notes, force, file, versionCode }) {
   }
   db.prepare(
     `INSERT INTO app_releases
-      (version, platform, apk_filename, release_notes, force_update, created_at, apk_sha256, apk_size, version_code)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      (version, platform, apk_filename, release_notes, force_update, created_at, apk_sha256, apk_size, version_code, package_name)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     version,
     'android',
@@ -2100,7 +2116,8 @@ function saveRelease({ version, notes, force, file, versionCode }) {
     new Date().toISOString(),
     apkSha256,
     apkSize,
-    vc
+    vc,
+    pkg
   );
   // Clear pending only if this version covers the announced build
   try {
@@ -2251,7 +2268,8 @@ app.post('/api/ci/releases', upload.single('apk'), (req, res) => {
   const notes = req.body?.releaseNotes || 'Mise à jour automatique';
   const force = req.body?.forceUpdate === '1' || req.body?.forceUpdate === true;
   const versionCode = req.body?.versionCode ?? req.body?.version_code ?? null;
-  const result = saveRelease({ version, notes, force, file: req.file, versionCode });
+  const packageName = req.body?.packageName || req.body?.package || FUEL_PKG_HUBERA;
+  const result = saveRelease({ version, notes, force, file: req.file, versionCode, packageName });
   if (result.skipped) return res.status(409).json(result);
   res.status(201).json(result);
 });
@@ -2270,9 +2288,9 @@ function requireAdmin(req, res, next) {
   return requireManager(req, res, next);
 }
 
-function latestApkFile() {
+function latestApkFile(packageName) {
   const rows = db.prepare('SELECT * FROM app_releases WHERE apk_filename IS NOT NULL').all();
-  const latest = pickLatestRelease(rows);
+  const latest = pickLatestRelease(rows, packageName || FUEL_PKG_HUBERA);
   if (!latest?.apk_filename) return null;
   const full = path.join(DATA_DIR, 'apks', latest.apk_filename);
   if (!fs.existsSync(full)) return null;

@@ -96,6 +96,7 @@ describe('readApkIdentity / assertApkIdentity', () => {
     const apk = writeFakeApk();
     expect(() =>
       assertApkIdentity(apk, {
+        packageName: 'com.gasoiltracking.app',
         versionName: '1.4.120',
         versionCode: 146,
       })
@@ -104,6 +105,11 @@ describe('readApkIdentity / assertApkIdentity', () => {
 
   it('refuse un APK multi-ABI', () => {
     const apk = writeFakeApk(['arm64-v8a', 'x86_64']);
-    expect(() => assertApkIdentity(apk, { versionCode: 137 })).toThrow(/multi-ABI/);
+    expect(() =>
+      assertApkIdentity(apk, {
+        packageName: 'com.gasoiltracking.app',
+        versionCode: 137,
+      })
+    ).toThrow(/multi-ABI/);
   });
 });

@@ -36,11 +36,11 @@
     </ol>
     <a class="btn" id="dl" href="#" aria-disabled="true">Télécharger l’APK</a>
     <a class="ghost" href="/download">iPhone (app native) et autres options</a>
-    <p class="meta">Package inchangé : <code>com.gasoiltracking.app</code> — vos km restent.</p>
+    <p class="meta">Package Android : <code>cloud.hubera.fuel</code> — mêmes trajets, signature EAS inchangée.</p>
   </main>
   <script>
     (function () {
-      fetch('/api/version')
+      fetch('/api/version?clientPackage=cloud.hubera.fuel')
         .then(function (r) { return r.json(); })
         .then(function (v) {
           document.getElementById('ver').textContent =

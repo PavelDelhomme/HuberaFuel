@@ -164,7 +164,7 @@
       if (isAndroid) document.getElementById('android').style.outline = '1px solid #22c55e';
 
       function loadVersion() {
-        fetch('/api/version')
+        fetch('/api/version?clientPackage=cloud.hubera.fuel')
           .then(function (r) { return r.json(); })
           .then(function (v) {
             document.getElementById('ver').textContent =
