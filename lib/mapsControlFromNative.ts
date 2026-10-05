@@ -16,7 +16,8 @@ export async function handleMapsControlPayload(raw: Record<string, unknown> | nu
   };
   const action = str('action') || '';
   const dedupe = `${action}|${str('tripId') || ''}|${str('vehicleId') || ''}|${str('liters') || ''}`;
-  if (dedupe === lastDedupe && Date.now() - lastAt < 4000) return;
+  const windowMs = action === 'snapshot' || action === 'select' ? 700 : 4000;
+  if (dedupe === lastDedupe && Date.now() - lastAt < windowMs) return;
   lastDedupe = dedupe;
   lastAt = Date.now();
   markMapsSilent(12000);
