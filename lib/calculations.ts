@@ -16,6 +16,7 @@ import {
   updateBudgetSpent,
   updateVehicle,
   getVehicleById,
+  deactivateVehicleScopedBudgets,
 } from './database';
 import { monthKeyFromDate, toLocalYmd } from './dates';
 import {
@@ -465,12 +466,13 @@ export async function refreshBudgets(vehicleId?: number): Promise<BudgetStatus[]
   return statuses;
 }
 
-/** Tous les budgets actifs (global + par véhicule), recalculés. */
+/** Uniquement l’enveloppe globale (tous véhicules cumulés). */
 export async function refreshAllBudgets(): Promise<BudgetStatus[]> {
   const budgets = await getBudgets();
   const statuses: BudgetStatus[] = [];
   for (const budget of budgets) {
-    statuses.push(await getBudgetStatus(budget, budget.vehicleId ?? undefined));
+    if (budget.vehicleId != null) continue;
+    statuses.push(await getBudgetStatus(budget, undefined));
   }
   return statuses;
 }
@@ -483,10 +485,15 @@ export const DEFAULT_GLOBAL_BUDGET = 250;
  * Ne crée plus de budgets par véhicule automatiquement (évite le double compteur).
  */
 export async function ensureDefaultBudgets(_vehicles: Vehicle[]): Promise<void> {
+  await deactivateVehicleScopedBudgets();
   const all = await getBudgets();
   const { startDate, endDate } = getBudgetPeriodDates('monthly');
 
-  const global = all.find((b) => b.vehicleId == null && b.period === 'monthly' && b.isActive);
+  const globals = all.filter((b) => b.vehicleId == null && b.period === 'monthly' && b.isActive);
+  for (const extra of globals.slice(1)) {
+    await updateBudget(extra.id, { isActive: false });
+  }
+  const global = globals[0];
   if (!global) {
     await createBudget({
       vehicleId: null,

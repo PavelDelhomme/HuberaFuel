@@ -423,10 +423,17 @@ function auth(req, res, next) {
       return res.status(401).json({ error: 'Token invalide' });
     }
     req.user = payload;
-    next();
+    return next();
   } catch {
-    return res.status(401).json({ error: 'Token invalide ou expiré' });
+    /* JWT Fuel KO → Hubera ID (Maps / suite) */
   }
+  resolveHuberaIdToken(token)
+    .then((user) => {
+      if (!user?.id) return res.status(401).json({ error: 'Token invalide ou expiré' });
+      req.user = { sub: user.id, email: user.email, typ: 'access', via: 'hubera-id' };
+      next();
+    })
+    .catch(() => res.status(401).json({ error: 'Token invalide ou expiré' }));
 }
 
 function sessionMeta(req) {
@@ -1131,6 +1138,47 @@ const HUBERA_ID_LOGIN_URLS = [
   'https://mail.hubera.cloud/auth/login',
 ];
 
+const HUBERA_ID_VALIDATE_URLS = [
+  'https://id.hubera.cloud/auth/validate',
+  'https://api.cloudity.delhomme.ovh/auth/validate',
+  'https://calendar.hubera.cloud/auth/validate',
+  'https://contacts.hubera.cloud/auth/validate',
+];
+
+const huberaIdUserCache = new Map();
+
+async function resolveHuberaIdToken(token) {
+  const key = hashToken(token);
+  const hit = huberaIdUserCache.get(key);
+  if (hit && Date.now() - hit.at < 60_000) return hit.user;
+  for (const url of HUBERA_ID_VALIDATE_URLS) {
+    try {
+      const ac = new AbortController();
+      const t = setTimeout(() => ac.abort(), 8000);
+      const r = await fetch(url, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+        signal: ac.signal,
+      });
+      clearTimeout(t);
+      if (!r.ok) continue;
+      const j = await r.json().catch(() => null);
+      const email = String(j?.email || '')
+        .toLowerCase()
+        .trim();
+      if (!email || j?.valid === false) continue;
+      const user = findUserByHuberaIdentity(email);
+      if (user) {
+        huberaIdUserCache.set(key, { at: Date.now(), user });
+        return user;
+      }
+    } catch {
+      /* hôte suivant */
+    }
+  }
+  return null;
+}
+
 async function huberaIdPasswordOk(email, password) {
   for (const url of HUBERA_ID_LOGIN_URLS) {
     try {
@@ -1693,24 +1741,59 @@ app.put('/api/sync', auth, syncLimiter, (req, res) => {
 /** Récupère les véhicules de l'utilisateur (pour sélection dans Maps). */
 app.get('/api/maps/vehicles', auth, (req, res) => {
   const row = db.prepare('SELECT payload FROM sync_data WHERE user_id = ?').get(req.user.sub);
-  if (!row) return res.json({ vehicles: [] });
+  if (!row) return res.json({ vehicles: [], activeVehicleId: null, fills: [], budget: null, places: [] });
   try {
     const data = JSON.parse(row.payload);
-    const vehicles = (data.vehicles || []).map((v) => ({
-      id: v.id,
-      name: v.name,
-      brand: v.brand,
-      model: v.model,
-      year: v.year,
-      fuelType: v.fuelType,
-      tankCapacity: v.tankCapacity,
-      lastKnownKm: v.lastKnownKm,
-      avgConsumption: v.avgConsumption,
-      licensePlate: v.licensePlate,
-      isDefault: v.isDefault,
-      isActive: Boolean(v.isActive || v.isDefault),
+    const vehicles = (data.vehicles || []).map((v) => {
+      const cap = Number(v.tankCapacity || v.tank_capacity || 0);
+      const liters = v.estimatedFuelLiters ?? v.estimated_fuel_liters;
+      const litersN = liters == null ? -1 : Number(liters);
+      const pct = cap > 0 && litersN >= 0 ? Math.round(Math.min(100, Math.max(0, (litersN / cap) * 100))) : -1;
+      return {
+        id: v.id,
+        name: v.name,
+        brand: v.brand,
+        model: v.model,
+        year: v.year,
+        fuelType: v.fuelType,
+        tankCapacity: v.tankCapacity,
+        lastKnownKm: v.lastKnownKm ?? v.currentOdometer,
+        avgConsumption: v.avgConsumption ?? v.consumptionPer100,
+        licensePlate: v.licensePlate ?? v.plateNumber,
+        isDefault: Boolean(v.isDefault || v.isActive),
+        isActive: Boolean(v.isActive || v.isDefault),
+        pct,
+      };
+    });
+    const activeVehicleId =
+      vehicles.find((v) => v.isActive)?.id || vehicles[0]?.id || null;
+    const fills = (data.fillUps || data.fills || []).slice(0, 8).map((f) => ({
+      date: f.date || '',
+      liters: Number(f.liters) || 0,
+      cost: Number(f.totalCost || f.cost) || 0,
+      station: f.note || f.station || '',
     }));
-    res.json({ vehicles });
+    const budgets = data.budgets || [];
+    const global =
+      budgets.find((b) => (b.vehicleId == null || b.vehicle_id == null) && (b.isActive !== false && b.is_active !== 0)) ||
+      budgets[0] ||
+      null;
+    const budget = global
+      ? {
+          amount: Number(global.amount) || 0,
+          spent: Number(global.spent) || 0,
+          name: global.name || 'Carburant total',
+        }
+      : null;
+    const places = (data.places || []).map((p) => ({
+      id: p.id,
+      name: p.name,
+      address: p.address,
+      latitude: p.latitude,
+      longitude: p.longitude,
+      type: p.type || p.kind,
+    }));
+    res.json({ vehicles, activeVehicleId, fills, budget, places });
   } catch {
     res.status(500).json({ error: 'Données véhicules corrompues' });
   }

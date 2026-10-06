@@ -98,8 +98,8 @@ export default function BudgetScreen() {
   const [zoneHint, setZoneHint] = useState('Autour de votre position GPS');
   const [fuelOpen, setFuelOpen] = useState(true);
   const [budgetsOpen, setBudgetsOpen] = useState(true);
-  /** null = Toutes ; sinon véhicule filtré (selectVehicle si ≠ actif) */
-  const [budgetAllVehicles, setBudgetAllVehicles] = useState(false);
+  /** true = enveloppe unique partagée (806 + 206 + …). */
+  const [budgetAllVehicles, setBudgetAllVehicles] = useState(true);
 
   const persistFuelZone = async (z: FuelZone) => {
     setFuelZone(z);

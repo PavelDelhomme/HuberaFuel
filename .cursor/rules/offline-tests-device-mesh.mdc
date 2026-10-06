@@ -1,0 +1,12 @@
+---
+description: Tests hors-ligne, reprise sync, et liaison ADB entre téléphones pour toute la suite Hubera
+alwaysApply: true
+---
+
+# Tests hors-ligne + mesh téléphones (toute la suite)
+
+Quand un test concerne Fuel, Maps, Music ou toute autre app Hubera :
+
+1. Vérifier **hors-ligne** puis **reprise de synchro** au retour réseau.
+2. Prévoir une **liaison de débogage entre smartphones** (pas seulement le débogage sans fil).
+3. Budget = **une enveloppe globale** partagée entre véhicules (806 ↔ 206). Overlay `-r`. OTA jamais forcée. Jamais `paul@` sur le Nothing.
