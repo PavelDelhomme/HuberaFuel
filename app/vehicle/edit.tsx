@@ -24,7 +24,7 @@ import {
   refreshVehicleCatalogFromApi,
   searchVehiclesLive,
 } from '@/lib/vehicleCatalogStore';
-import { setFuelLiters } from '@/lib/fuelLevel';
+import { fuelGaugeSaveSummary, setFuelLiters } from '@/lib/fuelLevel';
 import { FuelGaugeSlider } from '@/components/FuelGaugeSlider';
 import { refreshVehicleReminders } from '@/lib/reminders';
 import type { FuelType, Vehicle, VehicleSegment } from '@/types';
@@ -512,16 +512,10 @@ export default function EditVehicleScreen() {
             liters={vehicle.estimatedFuelLiters}
             onChange={(L) => setVehicle({ ...vehicle, estimatedFuelLiters: L })}
             onChangeEnd={async (L) => {
-              const { liters: next, tripsAdjusted, measuredL100 } = await setFuelLiters(vehicle, L);
-              setVehicle({ ...vehicle, estimatedFuelLiters: next });
+              const adj = await setFuelLiters(vehicle, L);
+              setVehicle({ ...vehicle, estimatedFuelLiters: adj.liters });
               await refresh();
-              notify(
-                'Niveau',
-                tripsAdjusted > 0
-                  ? `${next.toFixed(1)} L · ${tripsAdjusted} trajet(s) réajustés` +
-                      (measuredL100 != null ? ` · ~${measuredL100.toFixed(1)} L/100` : '')
-                  : `${next.toFixed(1)} L · autonomie mise à jour`
-              );
+              notify('Niveau', fuelGaugeSaveSummary(adj));
             }}
           />
           <Pressable

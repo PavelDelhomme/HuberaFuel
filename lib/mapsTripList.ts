@@ -66,6 +66,7 @@ export function encodeMapsFuelSnap(opts: {
     isActive?: boolean;
     tankCapacity?: number;
     estimatedFuelLiters?: number | null;
+    consumptionPer100?: number | null;
   }>;
   fills: Array<{ date?: string; liters?: number; totalCost?: number; note?: string | null }>;
   budget?: { amount?: number; spent?: number; name?: string } | null;
@@ -76,7 +77,12 @@ export function encodeMapsFuelSnap(opts: {
     const pct =
       L != null && tank > 0 ? Math.max(0, Math.min(100, Math.round((L / tank) * 100))) : -1;
     const name = clip(v.name || `${v.brand || ''} ${v.model || ''}`.trim() || `Véhicule ${v.id}`);
-    return [v.id, name, pct, v.isActive ? 1 : 0].join(FIELD);
+    const liters = L != null && Number.isFinite(L) ? Math.round(L * 10) / 10 : -1;
+    const l100 =
+      v.consumptionPer100 != null && v.consumptionPer100 > 0
+        ? Math.round(v.consumptionPer100 * 10) / 10
+        : 0;
+    return [v.id, name, pct, v.isActive ? 1 : 0, tank || 0, liters, l100].join(FIELD);
   });
   const fills = (opts.fills || []).slice(0, 8).map((f) =>
     [

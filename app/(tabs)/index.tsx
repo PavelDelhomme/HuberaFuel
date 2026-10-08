@@ -29,7 +29,7 @@ import { notify } from '@/lib/notify';
 import { getPlaces, getMaintenances, getTrips, reconcileTrackedKmFromTrips } from '@/lib/database';
 import { syncFailureMessage } from '@/lib/api';
 import { computeBudgetOutlook } from '@/lib/budgetOutlook';
-import { fuelRemainingTone, fuelToneColor, setFuelLiters } from '@/lib/fuelLevel';
+import { fuelGaugeSaveSummary, fuelRemainingTone, fuelToneColor, setFuelLiters } from '@/lib/fuelLevel';
 import { checkNearestStationReach } from '@/lib/nearestStationReach';
 import { getCurrentLocation } from '@/lib/locationService';
 import { FuelGaugeSlider } from '@/components/FuelGaugeSlider';
@@ -432,15 +432,7 @@ export default function HomeScreen() {
                     const adj = await setFuelLiters(activeVehicle, L);
                     await refresh();
                     await reloadStats(activeVehicle.id);
-                    notify(
-                      'Réservoir',
-                      adj.tripsAdjusted > 0
-                        ? `${adj.liters.toFixed(1)} L · ${adj.tripsAdjusted} trajet(s) réajustés` +
-                            (adj.measuredL100 != null
-                              ? ` · ~${adj.measuredL100.toFixed(1)} L/100`
-                              : '')
-                        : `${adj.liters.toFixed(1)} L enregistrés`
-                    );
+                    notify('Réservoir', fuelGaugeSaveSummary(adj));
                     // Push forcé : un syncPreferNewer peut PULL un cloud sans jauge et tout effacer.
                     try {
                       const r = await pushLocalNow();

@@ -486,6 +486,81 @@ export function learnedFactorFromGauge(
   return Math.min(1.55, Math.max(0.85, raw));
 }
 
+/** EMA du facteur par véhicule (jauge observée vs modèle). */
+export function blendLearnFactor(prev: number, sample: number): number {
+  const p = prev > 0.5 ? prev : 1;
+  const s = Math.min(1.55, Math.max(0.65, sample));
+  return Math.round((p * 0.72 + s * 0.28) * 1000) / 1000;
+}
+
+function saneLearnL100(lPer100: number, fuelType?: Vehicle['fuelType']): boolean {
+  if (!Number.isFinite(lPer100) || lPer100 <= 0) return false;
+  if (fuelType === 'electrique') return lPer100 >= 5 && lPer100 <= 40;
+  return lPer100 >= 3 && lPer100 <= 18;
+}
+
+export type GaugeLearnSample = {
+  previousLiters: number;
+  currentLiters: number;
+  tripKm: number;
+  estimatedBurnLiters: number;
+  prevL100: number;
+  prevLearnFactor: number;
+  fuelType?: Vehicle['fuelType'];
+};
+
+export type GaugeLearnUpdate = {
+  observedBurn: number;
+  sampleFactor: number;
+  nextLearnFactor: number;
+  measuredL100: number | null;
+  nextL100: number;
+  learned: boolean;
+};
+
+/**
+ * Recalibre L/100 + facteur d’apprentissage à partir d’une saisie jauge.
+ * Jauge qui monte (plein non saisi) : pas d’apprentissage (évite une fausse sous-conso).
+ */
+export function gaugeLearnUpdate(s: GaugeLearnSample): GaugeLearnUpdate | null {
+  const prevL = s.previousLiters;
+  const cur = s.currentLiters;
+  if (!Number.isFinite(prevL) || !Number.isFinite(cur)) return null;
+  const observedBurn = Math.round((prevL - cur) * 10) / 10;
+  if (observedBurn < 0.05) return null;
+
+  const tripKm = Number.isFinite(s.tripKm) ? s.tripKm : 0;
+  const est = Number.isFinite(s.estimatedBurnLiters) ? s.estimatedBurnLiters : 0;
+  if (tripKm < 1 && est < 0.15) return null;
+
+  const prevL100 = s.prevL100 > 0.5 ? s.prevL100 : 6.5;
+  const prevLearn = s.prevLearnFactor > 0.5 ? s.prevLearnFactor : 1;
+  const sampleFactor = learnedFactorFromGauge(Math.max(est, 0.2), observedBurn);
+  const nextLearnFactor = blendLearnFactor(prevLearn, sampleFactor);
+
+  let measuredL100: number | null = null;
+  let nextL100 = prevL100;
+  if (tripKm >= 2 && observedBurn >= 0.1) {
+    const measured = (observedBurn / tripKm) * 100;
+    if (saneLearnL100(measured, s.fuelType)) {
+      measuredL100 = Math.round(measured * 10) / 10;
+      const maxCap = s.fuelType === 'diesel' ? 14 : 12;
+      if (measured <= maxCap && measured <= prevL100 * 1.55) {
+        nextL100 = Math.round((measured * 0.45 + prevL100 * 0.55) * 10) / 10;
+      }
+    }
+  }
+
+  return {
+    observedBurn,
+    sampleFactor,
+    nextLearnFactor,
+    measuredL100,
+    nextL100,
+    learned: true,
+  };
+}
+
 export function learnFactorFromFullFillUps(
   fillUps: Array<{ liters: number; distanceSinceLastKm: number | null; isFull: boolean }>,
   catalogueL100: number

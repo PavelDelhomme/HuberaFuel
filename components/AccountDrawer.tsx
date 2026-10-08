@@ -223,6 +223,25 @@ export function AccountDrawer() {
               </>
             )}
 
+            <Text style={[styles.section, { color: colors.textSecondary }]}>Apps Hubera</Text>
+            {[
+              { label: 'Music', url: 'https://music.hubera.cloud', icon: 'musical-notes-outline' as const },
+              { label: 'Maps', url: 'https://maps.hubera.cloud', icon: 'map-outline' as const },
+              { label: 'Docs', url: 'https://docs.hubera.cloud', icon: 'book-outline' as const },
+              { label: 'Mail', url: 'https://mail.hubera.cloud', icon: 'mail-outline' as const },
+              { label: 'Compte', url: 'https://id.hubera.cloud', icon: 'person-outline' as const },
+            ].map((app) => (
+              <DrawerRow
+                key={app.label}
+                icon={app.icon}
+                label={app.label}
+                onPress={() => {
+                  closeDrawer();
+                  void Linking.openURL(app.url);
+                }}
+              />
+            ))}
+
             <Text style={[styles.section, { color: colors.textSecondary }]}>Application</Text>
             <DrawerRow
               icon="help-circle-outline"

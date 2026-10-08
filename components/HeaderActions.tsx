@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import { Pressable, View, StyleSheet, Platform, Animated, Easing } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { useApp } from '@/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
@@ -80,6 +81,22 @@ export function HeaderActions() {
 
   return (
     <View style={styles.row}>
+      <Pressable
+        onPress={() => router.push('/account' as never)}
+        accessibilityRole="button"
+        accessibilityLabel="Compte Hubera"
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        style={[
+          styles.actionBtn,
+          {
+            borderColor: colors.border,
+            backgroundColor: colors.card,
+            marginRight: 4,
+          },
+        ]}
+      >
+        <Ionicons name="person-circle-outline" size={22} color={colors.text} />
+      </Pressable>
       {!!user && (
         <Pressable
           onPress={onSync}

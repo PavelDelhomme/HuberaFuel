@@ -299,6 +299,15 @@ export async function login(email: string, password: string) {
   return data;
 }
 
+export async function loginWithHuberaToken(accessToken: string) {
+  const data = await request('/api/auth/login/hubera-sso', {
+    method: 'POST',
+    body: JSON.stringify({ access_token: accessToken }),
+  });
+  await setSession(data.token, data.user, data.refreshToken);
+  return data;
+}
+
 export type QrLoginStart = {
   challengeId: string;
   expiresAt: string;
