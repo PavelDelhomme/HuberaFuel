@@ -73,7 +73,7 @@ describe('mapsTripList', () => {
       budget: null,
     });
     expect(snap.startsWith('V||')).toBe(true);
-    expect(snap).toContain('7~Kangoo La Guerche~50~1');
-    expect(snap).toContain('2~Clio~20~0');
+    expect(snap).toContain('7~Kangoo La Guerche~50~1~60~30~0');
+    expect(snap).toContain('2~Clio~20~0~50~10~0');
   });
 });

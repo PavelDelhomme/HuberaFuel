@@ -22,7 +22,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 4000);
 const DATA_DIR = process.env.DATA_DIR || './data';
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production';
-const SHIPPED_VERSION = '1.4.163';
+const SHIPPED_VERSION = '1.4.169';
 const APP_VERSION = (() => {
   const env = process.env.APP_VERSION || SHIPPED_VERSION;
   try {
@@ -1201,6 +1201,23 @@ async function huberaIdPasswordOk(email, password) {
   return false;
 }
 
+app.post('/api/auth/login/hubera-sso', authLimiter, async (req, res) => {
+  const token = String(req.body?.accessToken || req.body?.access_token || '').trim();
+  if (!token) {
+    return res.status(400).json({ error: 'token requis' });
+  }
+  const user = await resolveHuberaIdToken(token);
+  if (!user) {
+    return res.status(401).json({
+      error: 'Pas de compte Fuel pour cet e-mail — connexion mot de passe une fois.',
+    });
+  }
+  if (user.email_verified === 0) {
+    return res.status(403).json({ error: 'Email non vérifié. Consultez votre boîte mail.' });
+  }
+  res.json(createSession(user, sessionMeta(req)));
+});
+
 function findUserByHuberaIdentity(email) {
   const local = findUserByLoginEmail(email);
   if (local) return local;
@@ -1757,8 +1774,11 @@ app.get('/api/maps/vehicles', auth, (req, res) => {
         year: v.year,
         fuelType: v.fuelType,
         tankCapacity: v.tankCapacity,
+        liters: litersN,
         lastKnownKm: v.lastKnownKm ?? v.currentOdometer,
         avgConsumption: v.avgConsumption ?? v.consumptionPer100,
+        l100: Number(v.avgConsumption ?? v.consumptionPer100) || 0,
+        consumptionLearnFactor: v.consumptionLearnFactor ?? v.consumption_learn_factor ?? 1,
         licensePlate: v.licensePlate ?? v.plateNumber,
         isDefault: Boolean(v.isDefault || v.isActive),
         isActive: Boolean(v.isActive || v.isDefault),
@@ -2182,8 +2202,9 @@ function saveRelease({ version, notes, force, file, versionCode, packageName }) 
       };
     }
     apkSha256 = crypto.createHash('sha256').update(fs.readFileSync(file.path)).digest('hex');
-    // Nom unique par versionCode — évite d’écraser un bon APK par un mauvais au même semver.
-    filename = `gasoil-tracking-${String(version).replace(/[^\w.\-]/g, '')}-vc${vc}.apk`;
+    // Nom unique par versionCode + package — évite d’écraser Hubera par le legacy au même vc.
+    const pkgTag = pkg === FUEL_PKG_HUBERA ? 'hubera' : 'legacy';
+    filename = `gasoil-tracking-${String(version).replace(/[^\w.\-]/g, '')}-vc${vc}-${pkgTag}.apk`;
     fs.renameSync(file.path, path.join(DATA_DIR, 'apks', filename));
   }
   db.prepare(

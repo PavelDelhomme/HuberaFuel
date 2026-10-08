@@ -85,7 +85,7 @@ import {
   SIM_HOME,
   SIM_WORK,
 } from '@/lib/gpsCarSimulator';
-import { applyTripFuelBurn, fuelRemainingTone, fuelToneColor, setFuelLiters } from '@/lib/fuelLevel';
+import { applyTripFuelBurn, fuelGaugeSaveSummary, fuelRemainingTone, fuelToneColor, setFuelLiters } from '@/lib/fuelLevel';
 import { recordFuelGaugeReading } from '@/lib/fuelGaugeHistory';
 import { checkNearestStationReach } from '@/lib/nearestStationReach';
 import { askFuelGaugeApprox } from '@/lib/fuelGaugePrompt';
@@ -3716,12 +3716,7 @@ export default function TripScreen() {
                             if (!activeVehicle) return;
                             const adj = await setFuelLiters(activeVehicle, L);
                             await refresh();
-                            notify(
-                              'Réservoir',
-                              adj.tripsAdjusted > 0
-                                ? `${adj.liters.toFixed(1)} L · ${adj.tripsAdjusted} trajet(s) réajustés`
-                                : `${adj.liters.toFixed(1)} L enregistrés`
-                            );
+                            notify('Réservoir', fuelGaugeSaveSummary(adj));
                           }}
                         />
                         <Text style={{ color: colors.textSecondary, fontSize: 11, marginTop: 4 }}>

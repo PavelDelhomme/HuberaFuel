@@ -64,7 +64,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         id: 'gauge',
         title: 'Jauge de carburant',
         body:
-          'La jauge est une estimation : elle baisse avec les trajets et remonte aux pleins. Au départ d’un trajet, vous pouvez l’ajuster. Si elle semble fausse, corrigez-la sur l’accueil ou après un plein complet. Chaque véhicule garde un historique des jauges (départ/arrivée, pleins, saisies).',
+          'La jauge est une estimation : elle baisse avec les trajets et remonte aux pleins. Au départ d’un trajet, vous pouvez l’ajuster. Valider la jauge compare la conso observée au modèle de cette voiture (facteur + L/100) et synchronise le cloud si vous êtes connecté. Chaque véhicule garde un historique des jauges (départ/arrivée, pleins, saisies).',
         link: { label: 'Accueil', href: '/(tabs)' },
       },
       {
@@ -300,7 +300,7 @@ export const HELP_KNOWN: KnownIssue[] = [
     kind: 'normal',
     title: 'La conso estimée ≠ ordinateur de bord',
     body:
-      'C’est une estimation (GPS + modèle + vos pleins). Elle s’améliore avec des pleins complets et une jauge correctement réglée, mais ne remplacera jamais le calculateur constructeur.',
+      'C’est une estimation (GPS + modèle + vos pleins). Régler la jauge peaufine le modèle de cette voiture (conso observée vs estimée). Ça ne remplacera jamais le calculateur constructeur.',
   },
   {
     id: 'gps-noise',

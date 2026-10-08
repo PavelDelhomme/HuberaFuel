@@ -17,9 +17,10 @@ import { Button } from '@/components/Button';
 import { QrWebLoginPanel } from '@/components/QrWebLoginPanel';
 import { API_URL, forgotPassword } from '@/lib/api';
 import { getAppFlavor } from '@/lib/appFlavor';
+import { listHuberaAccounts, type HuberaIdDeviceAccount } from '@/lib/huberaIdSso';
 
 export default function AuthScreen() {
-  const { login, register } = useAuth();
+  const { login, loginWithHubera, register } = useAuth();
   const { refresh } = useApp();
   const { colors } = useTheme();
   const flavor = getAppFlavor();
@@ -32,12 +33,20 @@ export default function AuthScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
+  const [huberaAccounts, setHuberaAccounts] = useState<HuberaIdDeviceAccount[]>([]);
 
   useEffect(() => {
     if (flavor.defaultLoginEmail && !email) {
       setEmail(flavor.defaultLoginEmail);
     }
   }, [flavor.defaultLoginEmail, email]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    listHuberaAccounts().then((rows) => {
+      if (rows.length) setHuberaAccounts(rows);
+    });
+  }, []);
 
   const submit = async () => {
     setError('');
@@ -106,7 +115,7 @@ export default function AuthScreen() {
         </View>
         <Text style={[styles.sub, { color: colors.textSecondary }]}>
           {mode === 'login'
-            ? 'Même compte que Hubera ID / Maps : paul@delhomme.ovh (gmail aussi). Si le mot de passe Hubera ID est refusé, c’est le mot de passe Fuel.'
+            ? 'Même compte que Hubera ID / Maps. Si le mot de passe Hubera ID est refusé, c’est le mot de passe Fuel.'
             : 'Compte utilisateur standard (pas admin). Code d’invitation requis. Un email de validation sera envoyé ; un gestionnaire peut aussi valider depuis Administration.'}
         </Text>
         {mode === 'login' && Platform.OS === 'web' && (
@@ -124,6 +133,36 @@ export default function AuthScreen() {
             onPress={() => router.push('/qr-login?scan=1' as never)}
             style={{ marginBottom: 16 }}
           />
+        )}
+        {mode === 'login' && huberaAccounts.length > 0 && (
+          <View style={{ marginBottom: 16 }}>
+            {huberaAccounts.map((acc) => (
+              <Button
+                key={acc.email}
+                title={`Continuer avec ${acc.email}`}
+                variant="outline"
+                onPress={async () => {
+                  setError('');
+                  setLoading(true);
+                  try {
+                    await loginWithHubera(acc.accessToken);
+                    await refresh();
+                    router.replace('/' as never);
+                  } catch (e) {
+                    setEmail(acc.email);
+                    setError(
+                      e instanceof Error
+                        ? e.message
+                        : 'SSO refusé — mot de passe Fuel une fois.',
+                    );
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+                style={{ marginBottom: 8 }}
+              />
+            ))}
+          </View>
         )}
         {mode === 'login' && (
           <Text style={{ color: colors.textSecondary, fontWeight: '700', marginBottom: 10 }}>
@@ -148,7 +187,7 @@ export default function AuthScreen() {
           onChangeText={setEmail}
           autoCapitalize="none"
           keyboardType="email-address"
-          placeholder="paul@delhomme.ovh"
+          placeholder="vous@exemple.fr"
         />
         <Input
           label="Mot de passe"

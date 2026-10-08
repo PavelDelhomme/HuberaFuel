@@ -1,9 +1,16 @@
 /** Helpers niveau carburant estimé par véhicule (multi-voitures). */
 
 import type { FillUp, FuelGaugeSource, Vehicle } from '@/types';
-import { getFillUps, getTrips, getVehicleById, updateTrip, updateVehicle } from '@/lib/database';
-import { estimateTripFuelLiters } from '@/lib/consumptionModel';
-import { isSaneConsumptionSample } from '@/lib/calculations';
+import {
+  getActiveTripLite,
+  getFillUps,
+  getFuelGaugeReadings,
+  getTrips,
+  getVehicleById,
+  updateTrip,
+  updateVehicle,
+} from '@/lib/database';
+import { blendLearnFactor, estimateTripFuelLiters, gaugeLearnUpdate } from '@/lib/consumptionModel';
 import { recordFuelGaugeReading } from '@/lib/fuelGaugeHistory';
 
 export type FillFuelPreview = {
@@ -152,90 +159,110 @@ export async function recalibrateFromManualGauge(
   vehicleId: number,
   currentLiters: number,
   opts?: { previousLiters?: number | null }
-): Promise<{ measuredL100: number; nextL100: number; tripsAdjusted: number } | null> {
+): Promise<{
+  measuredL100: number | null;
+  nextL100: number;
+  tripsAdjusted: number;
+  learnFactor: number;
+} | null> {
   const vehicle = await getVehicleById(vehicleId);
   if (!vehicle || vehicle.fuelType === 'electrique') return null;
   if (vehicle.consumptionAutoAdapt === false) return null;
 
-  const fills = await getFillUps(vehicleId);
-  if (!fills.length) return null;
-  const last = [...fills].sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
-
-  const trips = await getTrips(vehicleId, { omitRoutePoints: true });
-  const since = trips.filter(
-    (t) =>
-      !t.isActive &&
-      t.status !== 'rejected' &&
-      (t.distanceKm || 0) > 0 &&
-      String(t.startTime) > String(last.date)
+  const [fills, trips, readings, live] = await Promise.all([
+    getFillUps(vehicleId),
+    getTrips(vehicleId, { omitRoutePoints: true }),
+    getFuelGaugeReadings(vehicleId, { limit: 8 }).catch(() => []),
+    getActiveTripLite().catch(() => null),
+  ]);
+  const last = fills.length
+    ? [...fills].sort((a, b) => String(b.date).localeCompare(String(a.date)))[0]
+    : null;
+  const prevReading = (readings || []).find(
+    (r) =>
+      r.source !== 'model_burn' &&
+      Math.abs((r.liters || 0) - currentLiters) > 0.08
   );
-  const tripKm = since.reduce((s, t) => s + (t.distanceKm || 0), 0);
-  if (tripKm < 2 || since.length === 0) return null;
+  const sinceTime = last?.date || prevReading?.recordedAt || null;
 
-  let estTotal = since.reduce((s, t) => s + (t.estimatedFuelUsed || 0), 0);
-  if (estTotal < 0.15) {
-    estTotal = since.reduce(
+  const confirmedSince = trips.filter((t) => {
+    if (t.isActive || t.status === 'rejected' || !(t.distanceKm > 0)) return false;
+    if (sinceTime && String(t.startTime) <= String(sinceTime)) return false;
+    return true;
+  });
+
+  let tripKm = confirmedSince.reduce((s, t) => s + (t.distanceKm || 0), 0);
+  let estTotal = confirmedSince.reduce((s, t) => s + (t.estimatedFuelUsed || 0), 0);
+  if (live && live.vehicleId === vehicleId && (live.distanceKm || 0) > 0) {
+    tripKm += live.distanceKm || 0;
+    estTotal += live.estimatedFuelUsed || estimateTripFuelLiters(vehicle, live.distanceKm || 0);
+  }
+  if (estTotal < 0.15 && tripKm > 0) {
+    estTotal = confirmedSince.reduce(
       (s, t) => s + estimateTripFuelLiters(vehicle, t.distanceKm || 0),
       0
     );
+    if (live && live.vehicleId === vehicleId && (live.distanceKm || 0) > 0) {
+      estTotal += estimateTripFuelLiters(vehicle, live.distanceKm || 0);
+    }
   }
-  if (estTotal < 0.15) return null;
 
-  const prevL = opts?.previousLiters;
-  const atFill = last.isFull
-    ? vehicle.tankCapacity
-    : Math.min(
-        vehicle.tankCapacity,
-        Math.max(
-          last.liters,
-          (prevL != null && Number.isFinite(prevL) ? prevL : currentLiters) + estTotal
+  const prevL =
+    opts?.previousLiters != null && Number.isFinite(opts.previousLiters)
+      ? opts.previousLiters
+      : prevReading?.liters ?? vehicle.estimatedFuelLiters;
+  if (prevL == null || !Number.isFinite(prevL)) return null;
+
+  const atFill = last
+    ? last.isFull
+      ? vehicle.tankCapacity
+      : Math.min(
+          vehicle.tankCapacity,
+          Math.max(last.liters, prevL + Math.max(estTotal, 0))
         )
-      );
-  const actualBurn = Math.max(0, Math.round((atFill - currentLiters) * 10) / 10);
-  if (actualBurn < 0.1) return null;
+    : prevL;
+  const learned = gaugeLearnUpdate({
+    previousLiters: atFill,
+    currentLiters,
+    tripKm,
+    estimatedBurnLiters: estTotal,
+    prevL100: vehicle.consumptionPer100,
+    prevLearnFactor: vehicle.consumptionLearnFactor ?? 1,
+    fuelType: vehicle.fuelType,
+  });
+  if (!learned) return null;
 
-  const measured = (actualBurn / tripKm) * 100;
-  const prev = vehicle.consumptionPer100 > 0 ? vehicle.consumptionPer100 : measured;
-  const maxCap = vehicle.fuelType === 'diesel' ? 14 : 12;
-  const catalogueOk =
-    isSaneConsumptionSample(measured, vehicle.fuelType) &&
-    measured <= maxCap &&
-    measured <= prev * 1.55;
+  await updateVehicle(vehicleId, {
+    consumptionPer100: learned.nextL100,
+    consumptionLearnFactor: learned.nextLearnFactor,
+  });
 
-  let nextL100 = prev;
-  if (catalogueOk) {
-    nextL100 = Math.round((measured * 0.45 + prev * 0.55) * 10) / 10;
-    const learn =
-      prev > 0.5 ? Math.round(Math.min(1.4, Math.max(0.65, measured / prev)) * 1000) / 1000 : 1;
-    await updateVehicle(vehicleId, {
-      consumptionPer100: nextL100,
-      consumptionLearnFactor: learn,
-    });
-  }
-
-  const factor = actualBurn / estTotal;
-  const price =
-    last.pricePerLiter > 0
-      ? last.pricePerLiter
-      : vehicle.defaultFuelPrice > 0
-        ? vehicle.defaultFuelPrice
-        : 0;
   let tripsAdjusted = 0;
-  for (const t of since) {
-    const base =
-      (t.estimatedFuelUsed || 0) > 0
-        ? t.estimatedFuelUsed
-        : estimateTripFuelLiters(vehicle, t.distanceKm || 0);
-    const fuel = Math.round(base * factor * 100) / 100;
-    const cost = price > 0 ? Math.round(fuel * price * 100) / 100 : t.estimatedCost;
-    await updateTrip(t.id, { estimatedFuelUsed: fuel, estimatedCost: cost });
-    tripsAdjusted += 1;
+  if (last && confirmedSince.length > 0 && estTotal >= 0.15 && learned.observedBurn >= 0.1) {
+    const factor = learned.observedBurn / estTotal;
+    const price =
+      last.pricePerLiter > 0
+        ? last.pricePerLiter
+        : vehicle.defaultFuelPrice > 0
+          ? vehicle.defaultFuelPrice
+          : 0;
+    for (const t of confirmedSince) {
+      const base =
+        (t.estimatedFuelUsed || 0) > 0
+          ? t.estimatedFuelUsed
+          : estimateTripFuelLiters(vehicle, t.distanceKm || 0);
+      const fuel = Math.round(base * factor * 100) / 100;
+      const cost = price > 0 ? Math.round(fuel * price * 100) / 100 : t.estimatedCost;
+      await updateTrip(t.id, { estimatedFuelUsed: fuel, estimatedCost: cost });
+      tripsAdjusted += 1;
+    }
   }
 
   return {
-    measuredL100: Math.round(measured * 10) / 10,
-    nextL100,
+    measuredL100: learned.measuredL100,
+    nextL100: learned.nextL100,
     tripsAdjusted,
+    learnFactor: learned.nextLearnFactor,
   };
 }
 
@@ -276,7 +303,17 @@ export type SetFuelLitersResult = {
   liters: number;
   tripsAdjusted: number;
   measuredL100: number | null;
+  nextL100: number | null;
+  learnFactor: number | null;
 };
+
+export function fuelGaugeSaveSummary(adj: SetFuelLitersResult): string {
+  const bits = [`${adj.liters.toFixed(1)} L`];
+  if (adj.tripsAdjusted > 0) bits.push(`${adj.tripsAdjusted} trajet(s) réajustés`);
+  if (adj.measuredL100 != null) bits.push(`~${adj.measuredL100.toFixed(1)} L/100`);
+  else if (adj.learnFactor != null) bits.push('modèle conso mis à jour');
+  return bits.join(' · ');
+}
 
 /** Fixe un niveau en litres + redistribue conso/coûts des trajets depuis le dernier plein. */
 export async function setFuelLiters(
@@ -299,16 +336,20 @@ export async function setFuelLiters(
   });
   let tripsAdjusted = 0;
   let measuredL100: number | null = null;
+  let nextL100: number | null = null;
+  let learnFactor: number | null = null;
   try {
     const r = await recalibrateFromManualGauge(vehicle.id, next, { previousLiters });
     if (r) {
       tripsAdjusted = r.tripsAdjusted;
       measuredL100 = r.measuredL100;
+      nextL100 = r.nextL100;
+      learnFactor = r.learnFactor;
     }
   } catch {
     /* jauge seule suffit */
   }
-  return { liters: next, tripsAdjusted, measuredL100 };
+  return { liters: next, tripsAdjusted, measuredL100, nextL100, learnFactor };
 }
 
 /**
@@ -318,10 +359,7 @@ export async function blendConsumptionLearnFactor(
   vehicle: Vehicle,
   sampleFactor: number
 ): Promise<number> {
-  const prev = vehicle.consumptionLearnFactor && vehicle.consumptionLearnFactor > 0.5
-    ? vehicle.consumptionLearnFactor
-    : 1;
-  const next = Math.round((prev * 0.72 + sampleFactor * 0.28) * 1000) / 1000;
+  const next = blendLearnFactor(vehicle.consumptionLearnFactor ?? 1, sampleFactor);
   await updateVehicle(vehicle.id, { consumptionLearnFactor: next });
   return next;
 }

@@ -2,7 +2,7 @@
   "expo": {
     "name": "Hubera Fuel",
     "slug": "gasoil-tracking",
-    "version": "1.4.166",
+    "version": "1.4.169",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "gasoiltracking",
@@ -79,7 +79,7 @@
           "apiKey": "VOTRE_CLE_GOOGLE_MAPS_ANDROID"
         }
       },
-      "versionCode": 190,
+      "versionCode": 193,
       "intentFilters": [
         {
           "action": "VIEW",
@@ -157,7 +157,7 @@
       "eas": {
         "projectId": "d85bab84-0971-4266-8f8c-a37113bc7761"
       },
-      "whatsNew": "Session Fuel qui reste connectée, sync du compte à la connexion, plein Maps poussé dans le cloud. MAJ jamais bloquante.",
+      "whatsNew": "Chrome hamburger + compte Hubera ID. Jauge → modèle conso inchangé. Dual APK, MAJ jamais forcée.",
       "router": {
         "origin": false
       }

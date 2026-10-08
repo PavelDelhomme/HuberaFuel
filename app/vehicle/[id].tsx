@@ -27,7 +27,7 @@ import {
   getSinceLastFillStats,
 } from '@/lib/calculations';
 import { getFillUps, getTrips } from '@/lib/database';
-import { fuelRemainingTone, fuelToneColor, setFuelLiters } from '@/lib/fuelLevel';
+import { fuelGaugeSaveSummary, fuelRemainingTone, fuelToneColor, setFuelLiters } from '@/lib/fuelLevel';
 import { formatRelativeDay } from '@/lib/dates';
 import { notify } from '@/lib/notify';
 import { updateVehicle } from '@/lib/database';
@@ -187,12 +187,7 @@ export default function VehicleDetailScreen() {
             const adj = await setFuelLiters(vehicle, L);
             await refresh();
             await load();
-            notify(
-              'Réservoir',
-              adj.tripsAdjusted > 0
-                ? `${adj.liters.toFixed(1)} L · ${adj.tripsAdjusted} trajet(s) réajustés`
-                : `${adj.liters.toFixed(1)} L · conso recalibrée si plein connu`
-            );
+            notify('Réservoir', fuelGaugeSaveSummary(adj));
             void pushLocalNow().then(async (r) => {
               if (r?.ok) showToast('Jauge synchronisée');
               await refresh();

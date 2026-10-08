@@ -47,25 +47,32 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Accueil',
-          tabBarLabel: 'Accueil',
-          tabBarIcon: ({ color }) => <Ionicons name="home" size={20} color={color} />,
+          title: 'Trajet',
+          tabBarLabel: 'Trajet',
+          tabBarIcon: ({ color }) => <Ionicons name="navigate" size={20} color={color} />,
         }}
       />
       <Tabs.Screen
         name="vehicles"
         options={{
-          title: 'Mon Garage',
-          tabBarLabel: 'Mon Garage',
+          title: 'Véhicules',
+          tabBarLabel: 'Véhicules',
           tabBarIcon: ({ color }) => <Ionicons name="car" size={20} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="budget"
+        options={{
+          title: 'Stats',
+          tabBarLabel: 'Stats',
+          tabBarIcon: ({ color }) => <Ionicons name="stats-chart" size={20} color={color} />,
         }}
       />
       <Tabs.Screen
         name="fillups"
         options={{
+          href: null,
           title: 'Pleins',
-          tabBarLabel: 'Pleins',
-          tabBarIcon: ({ color }) => <Ionicons name="water" size={20} color={color} />,
         }}
       />
       <Tabs.Screen
@@ -78,17 +85,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="maps"
         options={{
+          href: null,
           title: 'Maps',
-          tabBarLabel: 'Maps',
-          tabBarIcon: ({ color }) => <Ionicons name="map" size={20} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="budget"
-        options={{
-          title: 'Budget',
-          tabBarLabel: 'Budget',
-          tabBarIcon: ({ color }) => <Ionicons name="wallet" size={20} color={color} />,
         }}
       />
     </Tabs>

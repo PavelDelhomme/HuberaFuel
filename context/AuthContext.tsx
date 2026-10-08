@@ -9,6 +9,7 @@ import {
   getStoredUser,
   getToken,
   login as apiLogin,
+  loginWithHuberaToken as apiLoginHubera,
   logoutRemote,
   register as apiRegister,
   setSession,
@@ -16,6 +17,7 @@ import {
   type PendingRegistrationSummary,
 } from '@/lib/api';
 import { applySnapshot, hasLocalUserData, normalizeSnapshot } from '@/lib/dataSnapshot';
+import { publishHuberaSession } from '@/lib/huberaIdSso';
 import { saveLocalBackup, refreshFromCloud, syncPreferNewer, forcePushLocalToCloud, type SyncPreferResult } from '@/lib/backup';
 
 type AuthContextType = {
@@ -25,6 +27,7 @@ type AuthContextType = {
   pendingRegistrations: PendingRegistrationSummary[];
   refreshMe: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
+  loginWithHubera: (accessToken: string) => Promise<void>;
   register: (
     email: string,
     password: string,
@@ -230,11 +233,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const token = await getToken();
         const refresh = await getRefreshToken();
         if (token) await setSession(token, u, refresh);
+        if (token) await publishHuberaSession(u.email, token, refresh || '');
       }
     } catch {
       setPendingRegistrationsCount(0);
       setPendingRegistrations([]);
     }
+  }, [hydrateAccountAfterLogin]);
+
+  const loginWithHubera = useCallback(async (accessToken: string) => {
+    const res = await apiLoginHubera(accessToken);
+    const next: AuthUser = {
+      ...res.user,
+      isManager: !!res.user.isManager,
+    };
+    setUser(next);
+    await hydrateAccountAfterLogin();
+    const token = await getToken();
+    const refresh = await getRefreshToken();
+    if (token) await publishHuberaSession(next.email, token, refresh || '');
   }, [hydrateAccountAfterLogin]);
 
   const register = useCallback(
@@ -276,6 +293,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         pendingRegistrations,
         refreshMe,
         login,
+        loginWithHubera,
         register,
         logout,
         syncNow,
