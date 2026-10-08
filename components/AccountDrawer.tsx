@@ -25,6 +25,7 @@ import { CountryPickerCard } from '@/components/CountryPickerCard';
 import { isManagerEmail, API_URL, getLocalAppVersion, fetchAppVersion, compareVersions } from '@/lib/api';
 import { getAppFlavor } from '@/lib/appFlavor';
 import { notify } from '@/lib/notify';
+import { openOrWeb } from '@/lib/huberaAppLauncher';
 
 type RowProps = {
   icon: keyof typeof Ionicons.glyphMap;
@@ -225,11 +226,11 @@ export function AccountDrawer() {
 
             <Text style={[styles.section, { color: colors.textSecondary }]}>Apps Hubera</Text>
             {[
-              { label: 'Music', url: 'https://music.hubera.cloud', icon: 'musical-notes-outline' as const },
-              { label: 'Maps', url: 'https://maps.hubera.cloud', icon: 'map-outline' as const },
-              { label: 'Docs', url: 'https://docs.hubera.cloud', icon: 'book-outline' as const },
-              { label: 'Mail', url: 'https://mail.hubera.cloud', icon: 'mail-outline' as const },
-              { label: 'Compte', url: 'https://id.hubera.cloud', icon: 'person-outline' as const },
+              { label: 'Music', slug: 'music', icon: 'musical-notes-outline' as const },
+              { label: 'Maps', slug: 'maps', icon: 'map-outline' as const },
+              { label: 'Docs', slug: 'docs', icon: 'book-outline' as const },
+              { label: 'Mail', slug: 'mail', icon: 'mail-outline' as const },
+              { label: 'Compte', slug: 'id', icon: 'person-outline' as const },
             ].map((app) => (
               <DrawerRow
                 key={app.label}
@@ -237,7 +238,7 @@ export function AccountDrawer() {
                 label={app.label}
                 onPress={() => {
                   closeDrawer();
-                  void Linking.openURL(app.url);
+                  void openOrWeb(app.slug);
                 }}
               />
             ))}
