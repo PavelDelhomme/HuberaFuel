@@ -4,6 +4,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
+import { Platform, StatusBar } from 'react-native';
 
 const TAB_LABEL_STYLE = {
   fontSize: 11,
@@ -19,7 +20,11 @@ const TAB_ITEM_STYLE = {
 export default function TabLayout() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const bottomPad = Math.max(insets.bottom, 8);
+  const topPad = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? StatusBar.currentHeight ?? 24 : 0,
+  );
+  const bottomPad = Math.max(insets.bottom, Platform.OS === 'android' ? 24 : 8);
   const tabBarHeight = 52 + bottomPad;
 
   return (
@@ -40,6 +45,7 @@ export default function TabLayout() {
         headerStyle: { backgroundColor: colors.background },
         headerTintColor: colors.text,
         headerTitleStyle: { fontWeight: '700' },
+        headerStatusBarHeight: topPad,
         headerLeft: () => <DrawerMenuButton />,
         headerRight: () => <HeaderActions />,
       }}
