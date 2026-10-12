@@ -23,6 +23,7 @@ import { useToast } from '@/context/ToastContext';
 import TripMap from '@/components/TripMap';
 import type { TripMapRef } from '@/components/TripMap.types';
 import { getCurrentLocation, peekLiveRouteTail, peekLiveTripId } from '@/lib/locationService';
+import { subscribeNativeFixes } from '@/lib/nativeLocation';
 import { fetchSpeedLimitNear, type SpeedLimitInfo } from '@/lib/roadSpeedLimits';
 import { forwardGeocode } from '@/lib/geocode';
 import { formatDistance, formatSpeedKmh, parseRoutePoints, calculateRouteDistance, type RoutePoint } from '@/lib/calculations';
@@ -219,6 +220,9 @@ export default function MapsScreen() {
             (pos) => {
               const next = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
               setUser(next);
+              if (pos.mocked) {
+                mapRef.current?.setCenter?.(next.latitude, next.longitude, 15);
+              }
               if (pos.coords.speed != null && pos.coords.speed >= 0) {
                 setSpeedKmh(pos.coords.speed * 3.6);
               }
@@ -226,7 +230,15 @@ export default function MapsScreen() {
           );
         }
       })();
+      const unsubNative = subscribeNativeFixes((fix) => {
+        const next = { latitude: fix.latitude, longitude: fix.longitude };
+        setUser(next);
+        if (fix.mocked) {
+          mapRef.current?.setCenter?.(next.latitude, next.longitude, 15);
+        }
+      });
       return () => {
+        unsubNative();
         nativeSub?.remove();
         if (webWatch != null && typeof navigator !== 'undefined') {
           navigator.geolocation.clearWatch(webWatch);

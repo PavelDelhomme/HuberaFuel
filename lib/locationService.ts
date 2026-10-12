@@ -527,6 +527,7 @@ export async function getCurrentLocation(opts?: {
 
   if (!opts?.fresh) {
     const last = await readLast(30 * 60_000, 500);
+    if (last?.mocked) return last;
     if (last) return last;
   } else {
     const last = await readLast(120_000, 250);

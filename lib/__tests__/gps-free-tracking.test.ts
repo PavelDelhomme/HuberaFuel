@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateGpsSample, MAX_ACCURACY_FIRST_M, MAX_ACCURACY_M } from '@/lib/gpsTracking';
+import {
+  acceptMapDisplayFix,
+  evaluateGpsSample,
+  MAX_ACCURACY_FIRST_M,
+  MAX_ACCURACY_M,
+} from '@/lib/gpsTracking';
 import { pickRicherRoutePoints } from '@/lib/liveTripBuffer';
 
 describe('filtre GPS suivi libre', () => {
@@ -50,6 +55,34 @@ describe('filtre GPS suivi libre', () => {
     };
     const r = evaluateGpsSample(a, b);
     expect(r.accept).toBe(true);
+  });
+
+  it('rejette un téléport Rennes → St-Jacques pour les km trajet', () => {
+    const a = { latitude: 48.15596, longitude: -1.58696, timestamp: 0 };
+    const b = {
+      latitude: 48.103,
+      longitude: -1.6935,
+      timestamp: 2000,
+      accuracy: 3,
+    };
+    const r = evaluateGpsSample(a, b);
+    expect(r.accept).toBe(false);
+    expect(r.reason).toBe('too_fast');
+  });
+
+  it('la pastille idle suit un téléport mock', () => {
+    const a = { latitude: 48.15596, longitude: -1.58696, timestamp: 0 };
+    const b = {
+      latitude: 48.103,
+      longitude: -1.6935,
+      timestamp: 2000,
+      accuracy: 3,
+      mocked: true,
+    };
+    expect(acceptMapDisplayFix(a, b)).toEqual({
+      latitude: 48.103,
+      longitude: -1.6935,
+    });
   });
 
   it('accepte un déplacement même si le capteur dit 0 m/s (FGS)', () => {

@@ -167,6 +167,35 @@ export function evaluateGpsSample(
   return { accept: true, reason: 'ok', distanceKm, sample };
 }
 
+/**
+ * Pastille carte à l’arrêt (pas les km trajet) : un saut mock / labo
+ * (Rennes → Saint-Jacques) recentre. `evaluateGpsSample` reste strict pour
+ * ne pas ajouter des km fantômes.
+ */
+export function acceptMapDisplayFix(
+  previous: RoutePointLike | null,
+  raw: GpsSample & { mocked?: boolean | null }
+): { latitude: number; longitude: number } | null {
+  if (!isValidCoord(raw.latitude, raw.longitude)) return null;
+  if (raw.mocked) {
+    return { latitude: raw.latitude, longitude: raw.longitude };
+  }
+  const verdict = evaluateGpsSample(previous, raw, { isFirst: !previous });
+  if (
+    verdict.accept ||
+    verdict.reason === 'too_close' ||
+    verdict.reason === 'too_soon' ||
+    verdict.reason === 'too_fast' ||
+    verdict.reason === 'stationary'
+  ) {
+    return { latitude: raw.latitude, longitude: raw.longitude };
+  }
+  if (verdict.reason === 'bad_accuracy' && !previous) {
+    return { latitude: raw.latitude, longitude: raw.longitude };
+  }
+  return null;
+}
+
 /** Distance en ignorant sauts / bruit (réparation a posteriori). */
 export function calculateFilteredRouteDistance(points: RoutePointLike[]): number {
   if (points.length < 2) return 0;

@@ -60,6 +60,7 @@ import {
   peekLiveTripId,
   appendForcedLocation,
 } from '@/lib/locationService';
+import { subscribeNativeFixes } from '@/lib/nativeLocation';
 import {
   seedLiveTripBuffer,
   clearLiveTripBuffer,
@@ -113,7 +114,7 @@ import { forwardGeocode } from '@/lib/geocode';
 import { notify, confirm } from '@/lib/notify';
 import { TripHistoryCard } from '@/components/TripHistoryCard';
 import { reverseGeocode, tripPlaceLabel } from '@/lib/geocode';
-import { evaluateGpsSample } from '@/lib/gpsTracking';
+import { acceptMapDisplayFix } from '@/lib/gpsTracking';
 import { currentMonthKey, formatDateSlash, formatRelativeDay, toLocalYmd } from '@/lib/dates';
 import { TripHistoryCalendar } from '@/components/TripHistoryCalendar';
 import {
@@ -687,33 +688,22 @@ export default function TripScreen() {
       latitude: number,
       longitude: number,
       timestamp: number,
-      accuracy?: number | null
+      accuracy?: number | null,
+      mocked?: boolean | null
     ) => {
-      const sample = { latitude, longitude, timestamp, accuracy };
-      const verdict = evaluateGpsSample(lastMapGps.current, sample, {
-        isFirst: !lastMapGps.current,
-      });
-      if (!verdict.accept && verdict.reason === 'too_fast') return null;
-      if (!verdict.accept && verdict.reason === 'bad_coords') return null;
-      if (accuracy != null && accuracy > 80 && lastMapGps.current) {
+      const sample = { latitude, longitude, timestamp, accuracy, mocked };
+      const coords = acceptMapDisplayFix(lastMapGps.current, sample);
+      if (!coords) return null;
+      if (accuracy != null && accuracy > 80 && lastMapGps.current && !mocked) {
         return null;
       }
-      if (verdict.accept || verdict.reason === 'too_close' || verdict.reason === 'too_soon') {
-        if (verdict.accept) {
-          lastMapGps.current = {
-            latitude,
-            longitude,
-            timestamp,
-            ...(accuracy != null ? { accuracy } : {}),
-          };
-        }
-        return { latitude, longitude };
-      }
-      if (verdict.reason === 'bad_accuracy' && !lastMapGps.current) {
-        lastMapGps.current = { latitude, longitude, timestamp };
-        return { latitude, longitude };
-      }
-      return null;
+      lastMapGps.current = {
+        latitude,
+        longitude,
+        timestamp,
+        ...(accuracy != null ? { accuracy } : {}),
+      };
+      return coords;
     };
 
     (async () => {
@@ -723,7 +713,8 @@ export default function TripScreen() {
           loc.coords.latitude,
           loc.coords.longitude,
           loc.timestamp || Date.now(),
-          loc.coords.accuracy
+          loc.coords.accuracy,
+          loc.mocked
         );
         if (coords) {
           setUserLocation(coords);
@@ -747,8 +738,8 @@ export default function TripScreen() {
           },
           () => {},
           {
-            enableHighAccuracy: false,
-            maximumAge: 15000,
+            enableHighAccuracy: true,
+            maximumAge: 0,
             timeout: 15000,
           }
         );
@@ -760,16 +751,17 @@ export default function TripScreen() {
         if (status !== 'granted' || cancelled) return;
         nativeSub = await Location.watchPositionAsync(
           {
-            accuracy: Location.Accuracy.Balanced,
-            timeInterval: 15000,
-            distanceInterval: 40,
+            accuracy: Location.Accuracy.High,
+            timeInterval: 2000,
+            distanceInterval: 8,
           },
           (pos) => {
             const coords = acceptMapFix(
               pos.coords.latitude,
               pos.coords.longitude,
               pos.timestamp || Date.now(),
-              pos.coords.accuracy
+              pos.coords.accuracy,
+              pos.mocked
             );
             if (!coords) return;
             setUserLocation(coords);
@@ -781,8 +773,23 @@ export default function TripScreen() {
       }
     })();
 
+    const unsubNative = subscribeNativeFixes((fix) => {
+      if (cancelled) return;
+      const coords = acceptMapFix(
+        fix.latitude,
+        fix.longitude,
+        fix.timestamp || Date.now(),
+        fix.accuracy,
+        fix.mocked
+      );
+      if (!coords) return;
+      setUserLocation(coords);
+      setCurrentRegion((r) => ({ ...r, ...coords }));
+    });
+
     return () => {
       cancelled = true;
+      unsubNative();
       nativeSub?.remove();
       if (webWatch != null && typeof navigator !== 'undefined') {
         navigator.geolocation.clearWatch(webWatch);
