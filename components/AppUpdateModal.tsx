@@ -38,7 +38,8 @@ export function AppUpdateModal({
   onSiteInstall,
 }: Props) {
   const { colors } = useTheme();
-  if (!info) return null;
+  const checking = busy && (!info || progress?.phase === 'check');
+  if (!info && !checking) return null;
   const local = getLocalAppVersion();
   const pct = Math.round((progress?.progress || 0) * 100);
 
@@ -54,13 +55,19 @@ export function AppUpdateModal({
       <View style={styles.backdrop}>
         <View style={[styles.card, { backgroundColor: colors.card || colors.background, borderColor: colors.border }]}>
           <Text style={[styles.title, { color: colors.text }]}>
-            {force ? 'Mise à jour importante' : 'Nouvelle version disponible'}
+            {checking
+              ? 'Vérification…'
+              : force
+                ? 'Mise à jour importante'
+                : 'Nouvelle version disponible'}
           </Text>
           <Text style={[styles.versions, { color: colors.textSecondary }]}>
-            {local} → {info.version}
+            {info ? `${local} → ${info.version}` : `Installée ${local}`}
           </Text>
           <Text style={[styles.notes, { color: colors.text }]}>
-            {userFacingReleaseNotes(info.releaseNotes, info.version)}
+            {checking
+              ? 'On vérifie s’il y a une mise à jour. L’icône tourne tant que ça continue.'
+              : userFacingReleaseNotes(info?.releaseNotes, info?.version)}
           </Text>
           <Text style={[styles.safe, { color: colors.textSecondary }]}>
             {Platform.OS === 'android'
@@ -72,7 +79,7 @@ export function AppUpdateModal({
               ? ' Vous pouvez reporter 4 h (plusieurs fois si besoin), puis la MAJ reviendra.'
               : ' Rappel dans 6 h si vous reportez (répétable).'}
           </Text>
-          {!!info.hubera?.message && (
+          {!!info?.hubera?.message && (
             <Text style={[styles.safe, { color: colors.text, marginTop: 8 }]}>
               {info.hubera.message}
             </Text>

@@ -149,7 +149,14 @@ export function AppUpdateProvider({ children }: { children: React.ReactNode }) {
 
   const checkNow = useCallback(
     async (opts?: { ignoreSnooze?: boolean }) => {
+      const userTap = opts?.ignoreSnooze === true;
       try {
+        if (userTap) {
+          setBusy(true);
+          setVisible(true);
+          setError(null);
+          setProgress({ phase: 'check', progress: 0.15, message: 'Vérification…' });
+        }
         if (isMapsSilentHop() && opts?.ignoreSnooze !== true) {
           setVisible(false);
           return false;
@@ -169,7 +176,15 @@ export function AppUpdateProvider({ children }: { children: React.ReactNode }) {
         setInfo(remote);
         return evaluate(remote, opts?.ignoreSnooze === true);
       } catch {
+        if (userTap) {
+          setError('Vérification impossible — réseau');
+        }
         return false;
+      } finally {
+        if (userTap) {
+          setBusy(false);
+          setProgress((p) => (p && p.phase === 'check' ? null : p));
+        }
       }
     },
     [evaluate]

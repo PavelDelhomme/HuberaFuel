@@ -13,7 +13,7 @@ import {
 } from '@/lib/otaApk';
 
 export type UpdateProgress = {
-  phase: 'backup' | 'permission' | 'download' | 'install' | 'done' | 'error';
+  phase: 'check' | 'backup' | 'permission' | 'download' | 'install' | 'done' | 'error';
   progress: number;
   message: string;
 };
