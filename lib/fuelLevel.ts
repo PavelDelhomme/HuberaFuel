@@ -1,6 +1,7 @@
 /** Helpers niveau carburant estimé par véhicule (multi-voitures). */
 
 import type { FillUp, FuelGaugeSource, Vehicle } from '@/types';
+import { previewFillUpFuel } from '@/lib/fuelLevelCore';
 import {
   getActiveTripLite,
   getFillUps,
@@ -13,52 +14,8 @@ import {
 import { blendLearnFactor, estimateTripFuelLiters, gaugeLearnUpdate } from '@/lib/consumptionModel';
 import { recordFuelGaugeReading } from '@/lib/fuelGaugeHistory';
 
-export type FillFuelPreview = {
-  beforeLiters: number | null;
-  afterLiters: number;
-  mode: 'full' | 'add' | 'replace_unknown';
-  summary: string;
-};
-
-/**
- * Aperçu avant enregistrement :
- * - plein complet → réservoir = capacité (le reste précédent est « complété »)
- * - partiel + niveau connu → reste + litres ajoutés (plafonné capacité)
- * - partiel + niveau inconnu → seulement les litres saisis
- */
-export function previewFillUpFuel(
-  vehicle: Vehicle,
-  fill: Pick<FillUp, 'liters' | 'isFull'>
-): FillFuelPreview {
-  const before = vehicle.estimatedFuelLiters;
-  if (fill.isFull) {
-    return {
-      beforeLiters: before,
-      afterLiters: vehicle.tankCapacity,
-      mode: 'full',
-      summary:
-        before != null
-          ? `Avant ~${before.toFixed(1)} L → plein = ${vehicle.tankCapacity} L (capacité)`
-          : `Plein complet → ${vehicle.tankCapacity} L (capacité du réservoir)`,
-    };
-  }
-  if (before != null) {
-    const after = Math.min(vehicle.tankCapacity, before + fill.liters);
-    return {
-      beforeLiters: before,
-      afterLiters: Math.round(after * 10) / 10,
-      mode: 'add',
-      summary: `Avant ~${before.toFixed(1)} L + ${fill.liters.toFixed(1)} L → ~${after.toFixed(1)} L`,
-    };
-  }
-  const after = Math.min(vehicle.tankCapacity, fill.liters);
-  return {
-    beforeLiters: null,
-    afterLiters: Math.round(after * 10) / 10,
-    mode: 'replace_unknown',
-    summary: `Niveau inconnu → estime ~${after.toFixed(1)} L (litres de ce plein seulement)`,
-  };
-}
+export { previewFillUpFuel };
+export type { FillFuelPreview } from '@/lib/fuelLevelCore';
 
 /**
  * Rejoue le niveau depuis le dernier plein chronologique :
@@ -126,18 +83,22 @@ export async function recomputeFuelFromLastFill(vehicleId: number): Promise<numb
 /** Applique un plein puis rejoue les trajets postérieurs (antidatés OK). */
 export async function applyFillUpToFuelEstimate(
   vehicle: Vehicle,
-  fill: Pick<FillUp, 'liters' | 'isFull'> & { id?: number | null }
+  fill: Pick<FillUp, 'liters' | 'isFull'> & { id?: number | null },
+  opts?: { ignorePrevious?: boolean }
 ): Promise<number> {
-  const preview = previewFillUpFuel(vehicle, fill);
-  await updateVehicle(vehicle.id, { estimatedFuelLiters: preview.afterLiters });
+  const preview = previewFillUpFuel(vehicle, fill, opts);
+  const stored = preview.exceedsCapacity
+    ? Math.min(vehicle.tankCapacity, preview.afterLiters)
+    : preview.afterLiters;
+  await updateVehicle(vehicle.id, { estimatedFuelLiters: stored });
   await recordFuelGaugeReading({
     vehicleId: vehicle.id,
-    liters: preview.afterLiters,
+    liters: stored,
     source: 'fill_up',
     fillUpId: fill.id ?? null,
   });
   const recomputed = await recomputeFuelFromLastFill(vehicle.id);
-  return recomputed ?? preview.afterLiters;
+  return recomputed ?? stored;
 }
 
 /**

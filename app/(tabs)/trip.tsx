@@ -87,6 +87,7 @@ import {
   SIM_WORK,
 } from '@/lib/gpsCarSimulator';
 import { applyTripFuelBurn, fuelGaugeSaveSummary, fuelRemainingTone, fuelToneColor, setFuelLiters } from '@/lib/fuelLevel';
+import { estimateCommutesRemaining } from '@/lib/commuteRange';
 import { recordFuelGaugeReading } from '@/lib/fuelGaugeHistory';
 import { checkNearestStationReach } from '@/lib/nearestStationReach';
 import { askFuelGaugeApprox } from '@/lib/fuelGaugePrompt';
@@ -3727,11 +3728,23 @@ export default function TripScreen() {
                           }}
                         />
                         <Text style={{ color: colors.textSecondary, fontSize: 11, marginTop: 4 }}>
-                          {tone === 'critical'
-                            ? 'Réservoir bas — pensez à faire le plein'
-                            : tone === 'warn'
-                              ? 'Niveau moyen — surveillez l’autonomie'
-                              : 'Niveau confortable'}
+                          {(() => {
+                            const commute =
+                              rem != null && activeVehicle
+                                ? estimateCommutesRemaining({
+                                    vehicle: activeVehicle,
+                                    litersRemaining: rem,
+                                    places,
+                                    trips: history,
+                                  })
+                                : null;
+                            if ((tone === 'critical' || tone === 'warn') && commute) {
+                              return commute.label;
+                            }
+                            if (tone === 'critical') return 'Réservoir bas — pensez à faire le plein';
+                            if (tone === 'warn') return 'Niveau moyen — surveillez l’autonomie';
+                            return 'Niveau confortable';
+                          })()}
                         </Text>
                       </View>
                     );

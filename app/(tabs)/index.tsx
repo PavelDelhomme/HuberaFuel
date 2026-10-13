@@ -30,6 +30,7 @@ import { getPlaces, getMaintenances, getTrips, reconcileTrackedKmFromTrips } fro
 import { syncFailureMessage } from '@/lib/api';
 import { computeBudgetOutlook } from '@/lib/budgetOutlook';
 import { fuelGaugeSaveSummary, fuelRemainingTone, fuelToneColor, setFuelLiters } from '@/lib/fuelLevel';
+import { estimateCommutesRemaining } from '@/lib/commuteRange';
 import { checkNearestStationReach } from '@/lib/nearestStationReach';
 import { getCurrentLocation } from '@/lib/locationService';
 import { FuelGaugeSlider } from '@/components/FuelGaugeSlider';
@@ -54,6 +55,7 @@ export default function HomeScreen() {
   const [places, setPlaces] = useState<Place[]>([]);
   const [dueMaintenances, setDueMaintenances] = useState<VehicleMaintenance[]>([]);
   const [todayTrips, setTodayTrips] = useState<Trip[]>([]);
+  const [allTrips, setAllTrips] = useState<Trip[]>([]);
   const [homeFuelDraft, setHomeFuelDraft] = useState<number | null>(null);
   const [stationCheckBusy, setStationCheckBusy] = useState(false);
 
@@ -69,6 +71,7 @@ export default function HomeScreen() {
     ]);
     setStats(s);
     setSinceFill(since);
+    setAllTrips(trips);
     const ymd = toLocalYmd(new Date());
     setTodayTrips(
       trips.filter((t) => {
@@ -312,6 +315,15 @@ export default function HomeScreen() {
     : 'unknown';
   const fuelColor = fuelToneColor(fuelTone, colors);
   const litersNow = activeVehicle?.estimatedFuelLiters ?? null;
+  const commuteLeft =
+    activeVehicle && litersNow != null
+      ? estimateCommutesRemaining({
+          vehicle: activeVehicle,
+          litersRemaining: litersNow,
+          places,
+          trips: allTrips,
+        })
+      : null;
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -467,6 +479,22 @@ export default function HomeScreen() {
                     </Text>
                   );
                 })()}
+                {commuteLeft && (fuelTone === 'warn' || fuelTone === 'critical') ? (
+                  <Text
+                    style={{
+                      color: fuelColor,
+                      fontSize: 13,
+                      textAlign: 'center',
+                      marginTop: 4,
+                      fontWeight: '600',
+                    }}
+                  >
+                    {commuteLeft.label}
+                    {commuteLeft.oneWayKm > 0
+                      ? ` · ~${commuteLeft.oneWayKm.toFixed(0)} km / ~${commuteLeft.litersPerRound.toFixed(1)} L A/R`
+                      : ''}
+                  </Text>
+                ) : null}
               </View>
             </Card>
             </TutorialAnchor>

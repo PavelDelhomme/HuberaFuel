@@ -150,7 +150,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         id: 'add-fill',
         title: 'Enregistrer un plein',
         body:
-          'Nouveau plein : la station la plus proche est proposée (choix si plusieurs au même endroit). Champs verrouillés + crayon pour éviter les erreurs. Prix au litre en -- auto avec le €/L affiché en dessous. Les litres sont plafonnés à la place libre estimée (+ marge).',
+          'Nouveau plein : la station la plus proche est proposée (choix si plusieurs au même endroit). Champs verrouillés + crayon pour éviter les erreurs. Prix au litre en -- auto avec le €/L affiché en dessous. « Plein jusqu’au bouchon » est décoché par défaut : la jauge = reste + litres, jamais 100 % sans confirmation. Si les litres dépassent la capacité enregistrée, l’app demande de valider (erreur de saisie ou réservoir plus grand).',
         link: { label: 'Pleins', href: '/(tabs)/fillups' },
       },
       {

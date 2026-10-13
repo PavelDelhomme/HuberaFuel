@@ -7,6 +7,7 @@ import {
   Text,
   Pressable,
   AppState,
+  Alert,
   type AppStateStatus,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -17,7 +18,7 @@ import { Input } from '@/components/Input';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { DatePickerField } from '@/components/DatePickerField';
-import { createFillUp, getFillUps, getTrips, updateVehicle, updateTrip } from '@/lib/database';
+import { createFillUp, getFillUps, getTrips, getVehicleById, updateVehicle, updateTrip } from '@/lib/database';
 import {
   adaptVehicleConsumption,
   displayOdometerKm,
@@ -65,7 +66,7 @@ export default function AddFillUpScreen() {
   );
   const [distanceKm, setDistanceKm] = useState('');
   const [dateLocal, setDateLocal] = useState(() => toLocalYmd(new Date()));
-  const [isFull, setIsFull] = useState(true);
+  const [isFull, setIsFull] = useState(false);
   const [note, setNote] = useState('');
   const [station, setStation] = useState<FuelStationPrice | null>(null);
   const [nearby, setNearby] = useState<FuelStationPrice[]>([]);
@@ -207,17 +208,8 @@ export default function AddFillUpScreen() {
   }, [liters, totalPaid, pricePerLiter, lastEdited]);
 
   const onLiters = (v: string) => {
-    let L = parseNum(v);
-    if (L > maxLitersAllowed && maxLitersAllowed > 0) {
-      L = maxLitersAllowed;
-      setLiters(String(L));
-      notify(
-        'Réservoir',
-        `Maximum ~${maxLitersAllowed.toFixed(1)} L (place libre estimée + marge).`
-      );
-    } else {
-      setLiters(v);
-    }
+    const L = parseNum(v);
+    setLiters(v);
     setLastEdited('liters');
     const T = parseNum(totalPaid);
     if (L > 0 && T > 0) setPricePerLiter((T / L).toFixed(3));
@@ -233,14 +225,7 @@ export default function AddFillUpScreen() {
     const L = parseNum(liters);
     if (L > 0 && T > 0) setPricePerLiter((T / L).toFixed(3));
     else if (T > 0 && parseNum(pricePerLiter) > 0) {
-      let nextL = T / parseNum(pricePerLiter);
-      if (nextL > maxLitersAllowed && maxLitersAllowed > 0) {
-        nextL = maxLitersAllowed;
-        notify(
-          'Réservoir',
-          `Maximum ~${maxLitersAllowed.toFixed(1)} L (place libre estimée + marge).`
-        );
-      }
+      const nextL = T / parseNum(pricePerLiter);
       setLiters(nextL.toFixed(2));
     }
   };
@@ -367,6 +352,79 @@ export default function AddFillUpScreen() {
     };
   }, [budgetStatuses, derived.total]);
 
+  const persistFill = async (opts?: {
+    resizeTankTo?: number;
+    ignorePrevious?: boolean;
+  }) => {
+    if (!activeVehicle) return;
+    setLoading(true);
+    try {
+      let vehicle = activeVehicle;
+      if (opts?.resizeTankTo && opts.resizeTankTo > vehicle.tankCapacity) {
+        await updateVehicle(vehicle.id, { tankCapacity: opts.resizeTankTo });
+        vehicle = (await getVehicleById(vehicle.id)) || {
+          ...vehicle,
+          tankCapacity: opts.resizeTankTo,
+        };
+      }
+      const dateIso = new Date(`${dateLocal}T12:00:00`).toISOString();
+      const odoVal = hasOdo ? parseNum(odometer) : null;
+      let distVal = distanceKm ? parseNum(distanceKm) : null;
+      if (hasOdo && (distVal == null || distVal <= 0) && odoVal != null && lastFill?.odometer != null) {
+        const delta = odoVal - lastFill.odometer;
+        if (delta > 0) distVal = Math.round(delta * 10) / 10;
+      }
+      const fillId = await createFillUp({
+        vehicleId: vehicle.id,
+        date: dateIso,
+        liters: Math.round(derived.liters * 100) / 100,
+        pricePerLiter: Math.round(derived.ppl * 1000) / 1000,
+        totalCost: Math.round(derived.total * 100) / 100,
+        odometer: odoVal,
+        distanceSinceLastKm: distVal,
+        isFull,
+        note: note.trim() || undefined,
+        tripId: linkedTripId && Number.isFinite(linkedTripId) ? linkedTripId : null,
+      });
+
+      if (linkedTripId && Number.isFinite(linkedTripId)) {
+        await updateTrip(linkedTripId, { fillUpId: fillId });
+      }
+
+      if (derived.ppl > 0) {
+        await updateVehicle(vehicle.id, { defaultFuelPrice: derived.ppl });
+      }
+
+      await applyFillUpToFuelEstimate(
+        vehicle,
+        {
+          liters: Math.round(derived.liters * 100) / 100,
+          isFull,
+          id: fillId,
+        },
+        { ignorePrevious: opts?.ignorePrevious }
+      );
+
+      const adapted = await adaptVehicleConsumption(vehicle.id);
+      await refreshBudgets(vehicle.id);
+      await refresh();
+      void refreshVehicleReminders();
+      let msg =
+        `${derived.liters.toFixed(2)} L · ${formatEuro(derived.total)}` +
+        (station ? ` · ${station.name}` : '') +
+        (params.fromTrip === '1' ? ' — reprenez le trajet quand vous voulez.' : '');
+      if (adapted && adapted.next !== adapted.previous) {
+        msg += `\nConso adaptée : ${adapted.previous.toFixed(1)} → ${adapted.next.toFixed(1)} L/100 (mesurée ~${adapted.measured.toFixed(1)}, ${adapted.samples} mesure${adapted.samples > 1 ? 's' : ''}).`;
+      }
+      showToast(`Plein enregistré — ${msg.replace(/\n/g, ' · ')}`, { durationMs: 3200 });
+      router.back();
+    } catch (e) {
+      notify('Erreur', e instanceof Error ? e.message : 'Impossible d’enregistrer le plein.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!activeVehicle) {
       notify('Erreur', 'Aucun véhicule actif.');
@@ -374,13 +432,6 @@ export default function AddFillUpScreen() {
     }
     if (derived.liters <= 0) {
       notify('Erreur', 'Indiquez les litres (ou montant + prix/L).');
-      return;
-    }
-    if (derived.liters > maxLitersAllowed + 0.05) {
-      notify(
-        'Trop de litres',
-        `Maximum ~${maxLitersAllowed.toFixed(1)} L pour ce réservoir (niveau actuel estimé).`
-      );
       return;
     }
     if (derived.ppl <= 0 || derived.total <= 0) {
@@ -403,62 +454,36 @@ export default function AddFillUpScreen() {
       return;
     }
 
-    setLoading(true);
-    try {
-      const dateIso = new Date(`${dateLocal}T12:00:00`).toISOString();
-      const odoVal = hasOdo ? parseNum(odometer) : null;
-      let distVal = distanceKm ? parseNum(distanceKm) : null;
-      // Compteur : dériver les km depuis le dernier plein si non saisis
-      if (hasOdo && (distVal == null || distVal <= 0) && odoVal != null && lastFill?.odometer != null) {
-        const delta = odoVal - lastFill.odometer;
-        if (delta > 0) distVal = Math.round(delta * 10) / 10;
-      }
-      const fillId = await createFillUp({
-        vehicleId: activeVehicle.id,
-        date: dateIso,
-        liters: Math.round(derived.liters * 100) / 100,
-        pricePerLiter: Math.round(derived.ppl * 1000) / 1000,
-        totalCost: Math.round(derived.total * 100) / 100,
-        odometer: odoVal,
-        distanceSinceLastKm: distVal,
-        isFull,
-        note: note.trim() || undefined,
-        tripId: linkedTripId && Number.isFinite(linkedTripId) ? linkedTripId : null,
-      });
-
-      if (linkedTripId && Number.isFinite(linkedTripId)) {
-        await updateTrip(linkedTripId, { fillUpId: fillId });
-      }
-
-      // Mémorise le prix station comme défaut véhicule
-      if (derived.ppl > 0) {
-        await updateVehicle(activeVehicle.id, { defaultFuelPrice: derived.ppl });
-      }
-
-      await applyFillUpToFuelEstimate(activeVehicle, {
-        liters: Math.round(derived.liters * 100) / 100,
-        isFull,
-        id: fillId,
-      });
-
-      const adapted = await adaptVehicleConsumption(activeVehicle.id);
-      await refreshBudgets(activeVehicle.id);
-      await refresh();
-      void refreshVehicleReminders();
-      let msg =
-        `${derived.liters.toFixed(2)} L · ${formatEuro(derived.total)}` +
-        (station ? ` · ${station.name}` : '') +
-        (params.fromTrip === '1' ? ' — reprenez le trajet quand vous voulez.' : '');
-      if (adapted && adapted.next !== adapted.previous) {
-        msg += `\nConso adaptée : ${adapted.previous.toFixed(1)} → ${adapted.next.toFixed(1)} L/100 (mesurée ~${adapted.measured.toFixed(1)}, ${adapted.samples} mesure${adapted.samples > 1 ? 's' : ''}).`;
-      }
-      showToast(`Plein enregistré — ${msg.replace(/\n/g, ' · ')}`, { durationMs: 3200 });
-      router.back();
-    } catch (e) {
-      notify('Erreur', e instanceof Error ? e.message : 'Impossible d’enregistrer le plein.');
-    } finally {
-      setLoading(false);
+    const preview = previewFillUpFuel(activeVehicle, {
+      liters: Math.round(derived.liters * 100) / 100,
+      isFull,
+    });
+    if (!isFull && preview.exceedsCapacity) {
+      const nextTank = Math.ceil(preview.neededCapacity);
+      const litersExceedTank = derived.liters > activeVehicle.tankCapacity + 0.05;
+      Alert.alert(
+        'Plus que la capacité enregistrée',
+        `Vous avez saisi ${derived.liters.toFixed(1)} L. Le réservoir de ${activeVehicle.name} est noté à ${activeVehicle.tankCapacity} L. Erreur de saisie, ou on a mal estimé le réservoir ?`,
+        [
+          { text: 'Corriger la saisie', style: 'cancel' },
+          {
+            text: `Réservoir = ${nextTank} L`,
+            onPress: () => void persistFill({ resizeTankTo: nextTank }),
+          },
+          ...(litersExceedTank
+            ? []
+            : [
+                {
+                  text: 'Jauge = litres saisis',
+                  onPress: () => void persistFill({ ignorePrevious: true }),
+                },
+              ]),
+        ]
+      );
+      return;
     }
+
+    await persistFill();
   };
 
   if (!activeVehicle) {
@@ -577,7 +602,7 @@ export default function AddFillUpScreen() {
 
       <Text style={[styles.section, { color: colors.text }]}>Quantité & montant</Text>
       <Text style={{ color: colors.textSecondary, fontSize: 12, marginBottom: 8 }}>
-        Champs verrouillés par défaut — touchez le crayon pour modifier. Max ~{maxLitersAllowed.toFixed(1)} L.
+        Champs verrouillés par défaut — touchez le crayon pour modifier. Place libre estimée ~{maxLitersAllowed.toFixed(1)} L (on peut dépasser, l’app demandera confirmation).
       </Text>
       {fillToFullLiters > 0 && (
         <Pressable
@@ -696,7 +721,7 @@ export default function AddFillUpScreen() {
         <View style={{ flex: 1, paddingRight: 12 }}>
           <Text style={[styles.switchLabel, { color: colors.text }]}>Plein jusqu’au bouchon</Text>
           <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2, lineHeight: 16 }}>
-            Oui = réservoir rempli (niveau = capacité). Non = on ajoute les litres au reste estimé.
+            Décoché par défaut. Oui seulement si le réservoir est plein jusqu’au bouchon (jauge = 100 %). Sinon on ajoute les litres au reste.
           </Text>
         </View>
         <Switch

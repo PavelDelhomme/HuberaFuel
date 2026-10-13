@@ -69,7 +69,7 @@ export default function StationTripScreen() {
 
   const [phase, setPhase] = useState<Phase>('go');
   const [doFillUp, setDoFillUp] = useState(true);
-  const [isFull, setIsFull] = useState(true);
+  const [isFull, setIsFull] = useState(false);
   const [liters, setLiters] = useState('');
   const [price, setPrice] = useState(
     params.price || activeVehicle?.defaultFuelPrice.toString() || '1.70'

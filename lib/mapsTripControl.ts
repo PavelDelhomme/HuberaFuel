@@ -26,6 +26,7 @@ export type MapsTripControlInput = {
   tripId?: string;
   liters?: string;
   total?: string;
+  isFull?: string | boolean;
   station?: string;
   dest?: string;
   vehicleId?: string;
@@ -146,6 +147,8 @@ export async function runMapsTripControl(
     const cost = total > 0 ? total : L * (vehicle.defaultFuelPrice || 1.7);
     const ppl = L > 0 ? cost / L : vehicle.defaultFuelPrice;
     const station = input.station?.trim();
+    const isFull =
+      input.isFull === true || input.isFull === '1' || input.isFull === 'true';
     const fillId = await createFillUp({
       vehicleId: vehicle.id,
       date: new Date().toISOString(),
@@ -154,11 +157,15 @@ export async function runMapsTripControl(
       totalCost: Math.round(cost * 100) / 100,
       odometer: vehicle.hasOdometer ? vehicle.currentOdometer : null,
       distanceSinceLastKm: null,
-      isFull: true,
+      isFull,
       note: station ? `Maps · ${station}` : 'Plein depuis Hubera Maps',
       tripId: tripId || null,
     });
-    await applyFillUpToFuelEstimate(vehicle, { liters: L, isFull: true, id: fillId });
+    await applyFillUpToFuelEstimate(vehicle, {
+      liters: L,
+      isFull,
+      id: fillId,
+    });
     if (tripId) {
       await pauseGpsTrip(tripId, refresh).catch(() => undefined);
     } else {

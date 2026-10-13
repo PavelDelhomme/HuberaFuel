@@ -451,12 +451,29 @@ export async function startBackgroundTracking(opts?: {
 
 export async function stopBackgroundTracking(): Promise<void> {
   await stopForegroundWatch();
-  try {
-    if (await hasOsLocationUpdates()) {
+  // Toujours tenter l’arrêt OS : hasStartedLocationUpdatesAsync peut mentir
+  // (notif FGS encore là alors que l’API dit « pas démarré »).
+  for (let i = 0; i < 2; i++) {
+    try {
       await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+    } catch (e) {
+      if (i === 0) console.warn('[gps-bg] stop failed', e);
     }
-  } catch (e) {
-    console.warn('[gps-bg] stop failed', e);
+  }
+  try {
+    const presented = await Notifications.getPresentedNotificationsAsync();
+    for (const n of presented) {
+      const title = String(n.request.content.title || '');
+      const body = String(n.request.content.body || '');
+      if (
+        /Hubera Fuel|Fuel — suivi|Trajet GPS/i.test(title) ||
+        /Trajet GPS|suivi en cours|arrière-plan/i.test(body)
+      ) {
+        await Notifications.dismissNotificationAsync(n.request.identifier).catch(() => undefined);
+      }
+    }
+  } catch {
+    /* module absent / web */
   }
   try {
     await persistLiveRoute();
