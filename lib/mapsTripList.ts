@@ -68,7 +68,7 @@ export function encodeMapsFuelSnap(opts: {
     estimatedFuelLiters?: number | null;
     consumptionPer100?: number | null;
   }>;
-  fills: Array<{ date?: string; liters?: number; totalCost?: number; note?: string | null }>;
+  fills: Array<{ date?: string; liters?: number; totalCost?: number; note?: string | null; vehicleId?: number | null }>;
   budget?: { amount?: number; spent?: number; name?: string } | null;
 }): string {
   const veh = (opts.vehicles || []).slice(0, 8).map((v) => {
@@ -84,14 +84,18 @@ export function encodeMapsFuelSnap(opts: {
         : 0;
     return [v.id, name, pct, v.isActive ? 1 : 0, tank || 0, liters, l100].join(FIELD);
   });
-  const fills = (opts.fills || []).slice(0, 8).map((f) =>
-    [
-      String(f.date || '').slice(0, 16),
-      Math.round((Number(f.liters) || 0) * 10) / 10,
-      Math.round((Number(f.totalCost) || 0) * 100) / 100,
-      clip(String(f.note || '').replace(/^Maps · /, '')),
-    ].join(FIELD)
-  );
+    const fills = [...(opts.fills || [])]
+      .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
+      .slice(0, 24)
+      .map((f) =>
+        [
+          String(f.date || '').slice(0, 16),
+          Math.round((Number(f.liters) || 0) * 10) / 10,
+          Math.round((Number(f.totalCost) || 0) * 100) / 100,
+          clip(String(f.note || '').replace(/^Maps · /, '')),
+          Number(f.vehicleId) || 0,
+        ].join(FIELD)
+      );
   const b = opts.budget;
   const bud = b
     ? [Math.round(Number(b.amount) || 0), Math.round(Number(b.spent) || 0), clip(b.name)].join(FIELD)

@@ -1787,12 +1787,28 @@ app.get('/api/maps/vehicles', auth, (req, res) => {
     });
     const activeVehicleId =
       vehicles.find((v) => v.isActive)?.id || vehicles[0]?.id || null;
-    const fills = (data.fillUps || data.fills || []).slice(0, 8).map((f) => ({
+    const allFills = [...(data.fillUps || data.fills || [])].sort((a, b) =>
+      String(b.date || '').localeCompare(String(a.date || ''))
+    );
+    const fills = allFills.slice(0, 24).map((f) => ({
       date: f.date || '',
       liters: Number(f.liters) || 0,
       cost: Number(f.totalCost || f.cost) || 0,
       station: f.note || f.station || '',
+      vehicleId: Number(f.vehicleId || f.vehicle_id) || 0,
     }));
+    for (const v of vehicles) {
+      if (v.liters >= 0) continue;
+      const last = fills.find((f) => f.vehicleId === Number(v.id));
+      if (!last) continue;
+      const full = allFills.find(
+        (f) => Number(f.vehicleId || f.vehicle_id) === Number(v.id) && (f.isFull || f.is_full)
+      );
+      if (full && Number(v.tankCapacity) > 0) {
+        v.liters = Number(v.tankCapacity);
+        v.pct = 100;
+      }
+    }
     const budgets = data.budgets || [];
     const global =
       budgets.find((b) => (b.vehicleId == null || b.vehicle_id == null) && (b.isActive !== false && b.is_active !== 0)) ||
