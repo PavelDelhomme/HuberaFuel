@@ -17,12 +17,13 @@ import { compareSemver, pickLatestRelease, normalizeFuelPackage, FUEL_PKG_HUBERA
 import { assertApkIdentity } from './apkMeta.js';
 import { applyPersonalCommute, applyPersonalFillUp, fetchCommuteRoute } from './personalCommute.js';
 import { huberaLegacyStatus, huberaNotice, pingFromRequest } from './huberaLegacy.js';
+import { betaChannelBlocked } from './betaChannel.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 4000);
 const DATA_DIR = process.env.DATA_DIR || './data';
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production';
-const SHIPPED_VERSION = '1.4.173';
+const SHIPPED_VERSION = '1.4.174';
 const APP_VERSION = (() => {
   const env = process.env.APP_VERSION || SHIPPED_VERSION;
   try {
@@ -410,6 +411,20 @@ const syncLimiter = rateLimit({
 });
 
 app.use('/api/', apiLimiter);
+
+/** JWT Fuel déjà en main. Pas d’appel Hubera ID : le canal prod anonyme reste synchrone. */
+function optionalAccessEmail(req) {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : '';
+  if (!token) return '';
+  try {
+    const payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
+    if (payload?.typ && payload.typ !== 'access') return '';
+    return String(payload.email || '');
+  } catch {
+    return '';
+  }
+}
 
 function auth(req, res, next) {
   const header = req.headers.authorization || '';
@@ -829,6 +844,9 @@ app.get('/api/hubera/legacy-status', (_req, res) => {
 });
 
 app.get('/api/version', (req, res) => {
+  if (betaChannelBlocked(req.query.channel, optionalAccessEmail(req), process.env.HUBERA_BETA_EMAILS || '')) {
+    return res.status(404).json({ error: 'APK non publiée' });
+  }
   pingFromRequest(req.query || {}, String(req.headers['user-agent'] || ''));
   const rows = db
     .prepare('SELECT * FROM app_releases WHERE apk_filename IS NOT NULL')
@@ -1785,8 +1803,8 @@ app.get('/api/maps/vehicles', auth, (req, res) => {
         pct,
       };
     });
-    const activeVehicleId =
-      vehicles.find((v) => v.isActive)?.id || vehicles[0]?.id || null;
+    const activeOnes = vehicles.filter((v) => v.isActive);
+    const activeVehicleId = activeOnes.length === 1 ? activeOnes[0].id : null;
     const allFills = [...(data.fillUps || data.fills || [])].sort((a, b) =>
       String(b.date || '').localeCompare(String(a.date || ''))
     );
@@ -2539,6 +2557,9 @@ async function notifyManagersPendingRegistration({ email, name, platform }) {
 }
 
 app.get('/api/download/:file', (req, res) => {
+  if (betaChannelBlocked(req.query.channel, optionalAccessEmail(req), process.env.HUBERA_BETA_EMAILS || '')) {
+    return res.status(404).json({ error: 'APK non publiée' });
+  }
   // Conservé pour CI / rétrocompat — préférer /api/get-app/:token
   const file = path.basename(req.params.file);
   if (!/^[\w.\-]+$/.test(file)) return res.status(400).json({ error: 'Nom invalide' });
