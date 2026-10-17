@@ -55,3 +55,19 @@ export function pickLatestRelease(rows, packageName = FUEL_PKG_LEGACY) {
   }
   return best;
 }
+
+/**
+ * L’APK publiée est proposée seulement si elle est strictement plus récente.
+ * Même versionCode (ou un code client plus haut) : ne pas reproposer ce binaire.
+ * Sans version ni code client : proposer (téléchargement anonyme).
+ */
+export function offerPublishedApk(latest, clientVersion, clientVersionCode) {
+  if (!latest?.apk_filename) return false;
+  const clientVer = String(clientVersion || '').trim();
+  const clientVc = Number(clientVersionCode) || 0;
+  const latestVc = Number(latest.version_code) || 0;
+  if (clientVer && compareSemver(latest.version, clientVer) < 0) return false;
+  if (clientVc > 0 && latestVc > 0 && clientVc >= latestVc) return false;
+  if (clientVer && compareSemver(latest.version, clientVer) === 0) return false;
+  return true;
+}

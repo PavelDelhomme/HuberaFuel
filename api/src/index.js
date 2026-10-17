@@ -13,7 +13,7 @@ import nodemailer from 'nodemailer';
 import Database from 'better-sqlite3';
 import multer from 'multer';
 import QRCode from 'qrcode';
-import { compareSemver, pickLatestRelease, normalizeFuelPackage, FUEL_PKG_HUBERA } from './semver.js';
+import { compareSemver, pickLatestRelease, normalizeFuelPackage, offerPublishedApk, FUEL_PKG_HUBERA } from './semver.js';
 import { assertApkIdentity } from './apkMeta.js';
 import { applyPersonalCommute, applyPersonalFillUp, fetchCommuteRoute } from './personalCommute.js';
 import { huberaLegacyStatus, huberaNotice, pingFromRequest } from './huberaLegacy.js';
@@ -858,15 +858,16 @@ app.get('/api/version', (req, res) => {
   const latest = pickLatestRelease(rows, clientPkg);
   const clientVer = String(req.query.clientVersion || '').trim();
   const clientVc = Number(req.query.clientVersionCode || 0) || 0;
+  const latestVc = Number(latest?.version_code) || 0;
   const apkOlderThanClient =
     Boolean(latest) &&
     ((clientVer && compareSemver(latest.version, clientVer) < 0) ||
-      (clientVc > 0 &&
-        Number(latest.version_code) > 0 &&
-        Number(latest.version_code) < clientVc));
-  // Jamais proposer / forcer un APK plus vieux que le téléphone.
-  const offerApk = Boolean(latest?.apk_filename) && !apkOlderThanClient;
-  let version = offerApk ? latest.version : APP_VERSION;
+      (clientVc > 0 && latestVc > 0 && latestVc < clientVc));
+  // Annoncer la release tant qu’elle n’est pas plus vieille que le téléphone.
+  const releaseCurrent = Boolean(latest?.apk_filename) && !apkOlderThanClient;
+  // Même code (ou plus haut) : ne pas reproposer ce binaire.
+  const offerApk = offerPublishedApk(latest, clientVer, clientVc);
+  let version = releaseCurrent ? latest.version : APP_VERSION;
   if (clientVer && compareSemver(version, clientVer) < 0) {
     version = clientVer;
   }
