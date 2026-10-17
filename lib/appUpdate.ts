@@ -6,10 +6,14 @@ import type { AppVersionInfo } from '@/lib/api';
 import { getApiUrl, getLocalVersionCode } from '@/lib/api';
 import { markUpdatePending, prepareDataForUpdate } from '@/lib/backup';
 import {
-  isOtaFileComplete,
+  apkZipMagicBytes,
+  bytesContainAscii,
+  decideOtaCache,
+  decodeBase64Bytes,
   otaApkFileName,
   shouldDeleteOtaAfterInstall,
-  shouldReuseOtaFile,
+  zipEndOfCentralDirectory,
+  type OtaCacheAction,
 } from '@/lib/otaApk';
 
 export type UpdateProgress = {
@@ -90,6 +94,56 @@ async function launchApkInstaller(fileUri: string) {
   }
 }
 
+async function probeOtaZip(uri: string): Promise<{
+  exists: boolean;
+  size: number | null;
+  zipMagic: boolean;
+  zipComplete: boolean;
+  hasAndroidManifest: boolean;
+}> {
+  const empty = {
+    exists: false,
+    size: null as number | null,
+    zipMagic: false,
+    zipComplete: false,
+    hasAndroidManifest: false,
+  };
+  const info = await FileSystem.getInfoAsync(uri).catch(() => ({ exists: false as const }));
+  if (!info.exists || !('size' in info) || !info.size || info.size < 4) {
+    return { ...empty, exists: !!info.exists, size: info.exists && 'size' in info ? info.size ?? null : null };
+  }
+  const size = info.size;
+  const readBytes = async (position: number, length: number) => {
+    const b64 = await FileSystem.readAsStringAsync(uri, {
+      encoding: FileSystem.EncodingType.Base64,
+      position,
+      length,
+    });
+    return decodeBase64Bytes(b64);
+  };
+  try {
+    const headLen = Math.min(size, 65536);
+    const head = await readBytes(0, headLen);
+    const zipMagic = apkZipMagicBytes(head);
+    let hasAndroidManifest = bytesContainAscii(head, 'AndroidManifest.xml');
+    const tailLen = Math.min(size, 65536);
+    const tail =
+      tailLen === size ? head : await readBytes(Math.max(0, size - tailLen), tailLen);
+    if (!hasAndroidManifest) {
+      hasAndroidManifest = bytesContainAscii(tail, 'AndroidManifest.xml');
+    }
+    return {
+      exists: true,
+      size,
+      zipMagic,
+      zipComplete: zipMagic && zipEndOfCentralDirectory(tail),
+      hasAndroidManifest,
+    };
+  } catch {
+    return { exists: true, size, zipMagic: false, zipComplete: false, hasAndroidManifest: false };
+  }
+}
+
 let otaInFlight: Promise<void> | null = null;
 let activeDownload: FileSystem.DownloadResumable | null = null;
 let otaCancelled = false;
@@ -157,86 +211,118 @@ async function performSafeApkUpdateInner(
   await FileSystem.makeDirectoryAsync(otaDir(), { intermediates: true }).catch(() => undefined);
   const dest = otaPathFor(info);
 
-  const existing = await FileSystem.getInfoAsync(dest).catch(() => ({ exists: false as const }));
-  const reuse = shouldReuseOtaFile({
-    exists: !!existing.exists,
-    actualSize: existing.exists ? existing.size : null,
+  const probe = await probeOtaZip(dest);
+  const action: OtaCacheAction = decideOtaCache({
+    exists: probe.exists,
+    actualSize: probe.size,
     expectedSize: info.apkSize,
+    zipMagic: probe.zipMagic,
+    zipComplete: probe.zipComplete,
+    hasAndroidManifest: probe.hasAndroidManifest,
     fileVersionCode: remoteVc,
     remoteVersionCode: remoteVc,
   });
 
   let uri = dest;
-  if (reuse) {
+  if (action === 'reuse') {
     onProgress?.({
       phase: 'download',
       progress: 0.88,
       message: 'APK déjà téléchargée — ouverture de l’installateur…',
     });
   } else {
-    if (existing.exists) {
+    let resumeData: string | undefined;
+    if (action === 'discard' && probe.exists) {
+      onProgress?.({
+        phase: 'download',
+        progress: 0.05,
+        message: 'Le fichier en cache n’est pas une APK. Nouveau téléchargement.',
+      });
       await FileSystem.deleteAsync(dest, { idempotent: true }).catch(() => undefined);
+    } else if (action === 'resume' && probe.size && probe.size >= 100_000) {
+      resumeData = String(probe.size);
+      onProgress?.({
+        phase: 'download',
+        progress: 0.1,
+        message: 'Reprise du téléchargement…',
+      });
+    } else {
+      onProgress?.({
+        phase: 'download',
+        progress: 0.1,
+        message: 'Téléchargement depuis le serveur…',
+      });
     }
-    onProgress?.({
-      phase: 'download',
-      progress: 0.1,
-      message: 'Téléchargement depuis le serveur…',
-    });
 
-    const download = FileSystem.createDownloadResumable(
-      apkUrl,
-      dest,
-      {
-        headers: {
-          Accept: 'application/vnd.android.package-archive,*/*',
+    const runDownload = (resumeFrom?: string) => {
+      const download = FileSystem.createDownloadResumable(
+        apkUrl,
+        dest,
+        {
+          headers: {
+            Accept: 'application/vnd.android.package-archive,*/*',
+          },
         },
-      },
-      (evt) => {
-        if (otaCancelled) return;
-        const total = evt.totalBytesExpectedToWrite || info.apkSize || 0;
-        const written = evt.totalBytesWritten || 0;
-        const pct = total > 0 ? written / total : 0;
-        onProgress?.({
-          phase: 'download',
-          progress: 0.1 + pct * 0.75,
-          message:
-            total > 0
-              ? `Téléchargement… ${Math.round(pct * 100)} %`
-              : 'Téléchargement en cours…',
-        });
-      }
-    );
-    activeDownload = download;
+        (evt) => {
+          if (otaCancelled) return;
+          const total = evt.totalBytesExpectedToWrite || info.apkSize || 0;
+          const written = evt.totalBytesWritten || 0;
+          const pct = total > 0 ? written / total : 0;
+          onProgress?.({
+            phase: 'download',
+            progress: 0.1 + pct * 0.75,
+            message:
+              total > 0
+                ? `Téléchargement… ${Math.round(pct * 100)} %`
+                : 'Téléchargement en cours…',
+          });
+        },
+        resumeFrom
+      );
+      activeDownload = download;
+      return download.downloadAsync();
+    };
 
-    const result = await download.downloadAsync();
+    let result = await runDownload(resumeData);
     activeDownload = null;
-    if (otaCancelled) {
-      throw new Error('Mise à jour annulée.');
+    if (otaCancelled) throw new Error('Mise à jour annulée.');
+    if (resumeData && result?.status === 200) {
+      await FileSystem.deleteAsync(dest, { idempotent: true }).catch(() => undefined);
+      onProgress?.({
+        phase: 'download',
+        progress: 0.1,
+        message: 'Le serveur n’a pas repris le fichier. Téléchargement complet.',
+      });
+      result = await runDownload(undefined);
+      activeDownload = null;
+      if (otaCancelled) throw new Error('Mise à jour annulée.');
     }
-    if (!result?.uri) {
-      throw new Error('Échec du téléchargement OTA');
+    if (!result?.uri || (result.status !== 200 && result.status !== 206)) {
+      throw new Error(
+        result ? `Échec du téléchargement OTA (HTTP ${result.status})` : 'Échec du téléchargement OTA'
+      );
     }
     uri = result.uri;
   }
 
-  const infoFile = await FileSystem.getInfoAsync(uri);
-  if (!isOtaFileComplete(infoFile.exists ? infoFile.size : null, info.apkSize)) {
+  const checked = await probeOtaZip(uri);
+  const ready = decideOtaCache({
+    exists: checked.exists,
+    actualSize: checked.size,
+    expectedSize: info.apkSize,
+    zipMagic: checked.zipMagic,
+    zipComplete: checked.zipComplete,
+    hasAndroidManifest: checked.hasAndroidManifest,
+    fileVersionCode: remoteVc,
+    remoteVersionCode: remoteVc,
+  });
+  if (ready !== 'reuse') {
     await FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => undefined);
-    throw new Error('APK téléchargée invalide ou incomplète. Réessayez.');
-  }
-
-  try {
-    const head = await FileSystem.readAsStringAsync(uri, {
-      encoding: 'base64' as FileSystem.EncodingType,
-      length: 4,
-      position: 0,
-    });
-    if (!head.startsWith('UEs')) {
-      await FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => undefined);
-      throw new Error('Fichier téléchargé n’est pas un APK (réseau / cache).');
-    }
-  } catch (e) {
-    if (e instanceof Error && e.message.includes('APK')) throw e;
+    throw new Error(
+      checked.zipMagic
+        ? 'APK téléchargée invalide ou incomplète. Réessayez.'
+        : 'Fichier téléchargé n’est pas une APK (réseau / cache).'
+    );
   }
 
   onProgress?.({

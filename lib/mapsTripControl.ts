@@ -15,7 +15,7 @@ import {
 } from '@/lib/database';
 import { peekLiveRouteTail } from '@/lib/locationService';
 import { calculateRouteDistance } from '@/lib/calculations';
-import { applyFillUpToFuelEstimate } from '@/lib/fuelLevel';
+import { applyFillUpToFuelEstimate, previewFillUpFuel } from '@/lib/fuelLevel';
 import { encodeMapsTripPack, encodeMapsFuelSnap } from '@/lib/mapsTripList';
 import { pauseGpsTrip, resumeGpsTrip, startGpsTrip, stopGpsTripLite } from '@/lib/startFreeTrip';
 import { getToken } from '@/lib/api';
@@ -50,15 +50,22 @@ async function packRecentTrips(): Promise<string> {
 }
 
 async function packSnap(): Promise<string> {
-  const [vehicles, fills, budgets] = await Promise.all([
+  const [vehicles, fills, budgets, active] = await Promise.all([
     getVehicles(),
     getFillUps(),
     getBudgets(),
+    getActiveVehicle(),
   ]);
+  const activeId = active?.id || 0;
+  const marked = vehicles.map((v) => ({
+    ...v,
+    isActive: activeId > 0 ? v.id === activeId : false,
+  }));
   return encodeMapsFuelSnap({
-    vehicles,
+    vehicles: marked,
     fills,
     budget: budgets[0] || null,
+    lastVehicleId: activeId || undefined,
   });
 }
 
@@ -149,10 +156,18 @@ export async function runMapsTripControl(
     const station = input.station?.trim();
     const isFull =
       input.isFull === true || input.isFull === '1' || input.isFull === 'true';
+    const roundedL = Math.round(L * 100) / 100;
+    const preview = previewFillUpFuel(vehicle, { liters: roundedL, isFull });
+    if (!isFull && preview.exceedsCapacity) {
+      return {
+        ok: false,
+        message: `${roundedL.toFixed(1)} L dépasse le réservoir (${vehicle.tankCapacity} L). Corrige la saisie : le plein n’est pas enregistré.`,
+      };
+    }
     const fillId = await createFillUp({
       vehicleId: vehicle.id,
       date: new Date().toISOString(),
-      liters: Math.round(L * 100) / 100,
+      liters: roundedL,
       pricePerLiter: Math.round(ppl * 1000) / 1000,
       totalCost: Math.round(cost * 100) / 100,
       odometer: vehicle.hasOdometer ? vehicle.currentOdometer : null,
@@ -162,7 +177,7 @@ export async function runMapsTripControl(
       tripId: tripId || null,
     });
     await applyFillUpToFuelEstimate(vehicle, {
-      liters: L,
+      liters: roundedL,
       isFull,
       id: fillId,
     });

@@ -54,9 +54,17 @@ export async function repairFillUpVehiclesAndBudgets(): Promise<{
   const touran = vehicles.find(
     (v) => /touran/i.test(v.name) || /touran/i.test(v.model || '') || /touran/i.test(v.brand || '')
   );
-  const v206 = vehicles.find(
-    (v) => /206/.test(v.name) || /206/.test(v.model || '') || /206/.test(v.brand || '')
-  );
+  const is206 = (v: { name?: string; model?: string; brand?: string }) =>
+    /206/.test(v.name || '') || /206/.test(v.model || '') || /206/.test(v.brand || '');
+  const isGrey206 = (v: { name?: string; model?: string }) =>
+    /gris/i.test(`${v.name || ''} ${v.model || ''}`);
+  // Deux 206 dans le garage : les tickets historiques (août / 2 sept.) sont ceux
+  // de la 2003, pas de la grise ajoutée ensuite. Ne pas prendre « la première »
+  // selon isActive, sinon activer la grise déplace ces pleins.
+  const v206 =
+    vehicles.find((v) => is206(v) && Number(v.year) === 2003 && !isGrey206(v)) ||
+    vehicles.find((v) => is206(v) && !isGrey206(v)) ||
+    vehicles.find((v) => is206(v));
 
   let fillUpsFixed = 0;
   let pricesFixed = 0;

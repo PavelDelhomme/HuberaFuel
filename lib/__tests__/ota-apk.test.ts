@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  apkZipMagicBase64,
+  apkZipMagicBytes,
+  decideOtaCache,
   isOtaFileComplete,
   otaApkFileName,
   shouldDeleteOtaAfterInstall,
   shouldReuseOtaFile,
+  zipEndOfCentralDirectory,
 } from '@/lib/otaApk';
 
 describe('otaApkFileName', () => {
@@ -58,6 +62,61 @@ describe('shouldReuseOtaFile', () => {
         expectedSize: 40_000_000,
       })
     ).toBe(false);
+  });
+});
+
+describe('decideOtaCache', () => {
+  const eocd = [0x50, 0x4b, 0x05, 0x06, ...Array(18).fill(0)];
+
+  it('reconnaît le magic PK et refuse du HTML', () => {
+    expect(apkZipMagicBase64('UEsDBA==')).toBe(true);
+    expect(apkZipMagicBytes([0x50, 0x4b, 0x03, 0x04])).toBe(true);
+    expect(apkZipMagicBase64('PGh0bWw=')).toBe(false);
+    expect(zipEndOfCentralDirectory(eocd)).toBe(true);
+    expect(zipEndOfCentralDirectory([0x50, 0x4b, 0x03, 0x04])).toBe(false);
+  });
+
+  it('réutilise une APK close, reprend un zip coupé, jette un fichier qui n’est pas une APK', () => {
+    expect(
+      decideOtaCache({
+        exists: true,
+        actualSize: 40_000_000,
+        expectedSize: 40_000_000,
+        zipMagic: true,
+        zipComplete: true,
+        hasAndroidManifest: true,
+      })
+    ).toBe('reuse');
+    expect(
+      decideOtaCache({
+        exists: true,
+        actualSize: 2_000_000,
+        expectedSize: 40_000_000,
+        zipMagic: true,
+        zipComplete: false,
+        hasAndroidManifest: false,
+      })
+    ).toBe('resume');
+    expect(
+      decideOtaCache({
+        exists: true,
+        actualSize: 9_000_000,
+        expectedSize: 40_000_000,
+        zipMagic: false,
+        zipComplete: false,
+        hasAndroidManifest: false,
+      })
+    ).toBe('discard');
+    expect(
+      decideOtaCache({
+        exists: false,
+        actualSize: 0,
+        expectedSize: 40_000_000,
+        zipMagic: false,
+        zipComplete: false,
+        hasAndroidManifest: false,
+      })
+    ).toBe('fresh');
   });
 });
 

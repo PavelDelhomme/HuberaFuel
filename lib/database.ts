@@ -13,6 +13,13 @@ import type {
   VehicleMaintenance,
 } from '@/types';
 import { refreshMaintenanceStatus } from '@/lib/vehicleMaintenance';
+import {
+  LAST_VEHICLE_STORAGE_KEY,
+  MAPS_FUEL_VEHICLE_KEY,
+  firstStoredVehicleRaw,
+  parseStoredVehicleId,
+  resolveActiveVehicleId,
+} from '@/lib/lastVehicle';
 
 let db: SQLite.SQLiteDatabase | null = null;
 
@@ -484,31 +491,68 @@ export async function getVehicles(): Promise<Vehicle[]> {
 
 export async function getActiveVehicle(): Promise<Vehicle | null> {
   const database = await getDatabase();
-  const row = await database.getFirstAsync('SELECT * FROM vehicles WHERE is_active = 1 LIMIT 1');
-  if (row) return mapVehicle(row);
+  const allIds = (
+    await database.getAllAsync('SELECT id FROM vehicles')
+  ).map((r) => Number((r as { id: number }).id));
+  const activeRows = await database.getAllAsync('SELECT id FROM vehicles WHERE is_active = 1');
+  const dbActiveIds = activeRows.map((r) => Number((r as { id: number }).id));
+  const lastTripAtByVehicle: Record<number, number> = {};
   try {
-    const last = await AsyncStorage.getItem('gasoil_last_vehicle_id');
-    if (last) {
-      const id = Number(last);
-      if (Number.isFinite(id) && id > 0) {
-        const v = await getVehicleById(id);
-        if (v) {
-          await database.runAsync('UPDATE vehicles SET is_active = 0');
-          await database.runAsync('UPDATE vehicles SET is_active = 1 WHERE id = ?', [id]);
-          return { ...v, isActive: true };
-        }
-      }
+    const tripRows = await database.getAllAsync(
+      `SELECT vehicle_id AS id, MAX(COALESCE(end_time, start_time)) AS last_at
+       FROM trips WHERE status IS NULL OR status != 'rejected' GROUP BY vehicle_id`
+    );
+    for (const r of tripRows as { id: number; last_at?: string | null }[]) {
+      const ms = Date.parse(String(r.last_at || '')) || 0;
+      if (r.id) lastTripAtByVehicle[Number(r.id)] = ms;
     }
   } catch {
-    /* ignore */
+    /* base ancienne */
+  }
+  let storedId: number | null = null;
+  try {
+    const primary = await AsyncStorage.getItem(LAST_VEHICLE_STORAGE_KEY);
+    const shared = await AsyncStorage.getItem(MAPS_FUEL_VEHICLE_KEY);
+    storedId = parseStoredVehicleId(firstStoredVehicleRaw(primary, shared));
+  } catch {
+    storedId = null;
+  }
+  const resolved = resolveActiveVehicleId({
+    storedId,
+    dbActiveIds,
+    lastTripAtByVehicle,
+    vehicleIds: allIds,
+  });
+  if (resolved != null) {
+    const v = await getVehicleById(resolved);
+    if (v) {
+      await database.runAsync('UPDATE vehicles SET is_active = 0 WHERE id != ?', [resolved]);
+      await database.runAsync('UPDATE vehicles SET is_active = 1 WHERE id = ?', [resolved]);
+      try {
+        await AsyncStorage.setItem(LAST_VEHICLE_STORAGE_KEY, String(resolved));
+      } catch {
+        /* ignore */
+      }
+      return { ...v, isActive: true };
+    }
+  }
+  const rows = await database.getAllAsync('SELECT * FROM vehicles WHERE is_active = 1');
+  if (rows.length === 1) {
+    const v = mapVehicle(rows[0]);
+    try {
+      await AsyncStorage.setItem(LAST_VEHICLE_STORAGE_KEY, String(v.id));
+    } catch {
+      /* ignore */
+    }
+    return v;
   }
   const first = await database.getFirstAsync('SELECT * FROM vehicles ORDER BY id ASC LIMIT 1');
-  if (first) {
+  if (first && rows.length === 0) {
     const v = mapVehicle(first);
     await database.runAsync('UPDATE vehicles SET is_active = 1 WHERE id = ?', [v.id]);
     return { ...v, isActive: true };
   }
-  return null;
+  return rows.length === 1 ? mapVehicle(rows[0]) : null;
 }
 
 export async function getVehicleById(id: number): Promise<Vehicle | null> {
@@ -748,7 +792,7 @@ export async function setActiveVehicle(id: number): Promise<void> {
   await database.runAsync('UPDATE vehicles SET is_active = 0');
   await database.runAsync('UPDATE vehicles SET is_active = 1 WHERE id = ?', [id]);
   try {
-    await AsyncStorage.setItem('gasoil_last_vehicle_id', String(id));
+    await AsyncStorage.setItem(LAST_VEHICLE_STORAGE_KEY, String(id));
   } catch {
     /* ignore */
   }

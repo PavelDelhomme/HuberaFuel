@@ -3,6 +3,7 @@
  * Les waypoints `via:` biaisent l’itinéraire sans créer d’arrêt — toujours encodés.
  */
 import { ActionSheetIOS, Alert, Linking, Platform } from 'react-native';
+import * as IntentLauncher from 'expo-intent-launcher';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { buildViaWaypoints, samplePassThroughViasFromRoute } from '@/lib/routeVias';
 import {
@@ -25,6 +26,9 @@ export {
 };
 
 const MAPS_PREF_KEY = 'gasoil_maps_app_pref_v1';
+const HUBERA_MAPS_PACKAGES = ['cloud.hubera.maps', 'ovh.delhomme.maps'] as const;
+const HUBERA_MAPS_ACTIVITY = 'ovh.delhomme.maps.MainActivity';
+const HUBERA_MAPS_OTA = 'https://maps.hubera.cloud';
 
 function fmt(p: MapsLatLng): string {
   return fmtLatLng(p);
@@ -42,6 +46,37 @@ export function buildGoogleMapsDirUrl(opts: {
 }
 
 export { buildAppleMapsUrl };
+
+/** Ouvre Hubera Maps (paquet explicite). Jamais un geo: nu, qui part vers Organic Maps. */
+async function openHuberaMaps(data?: string): Promise<boolean> {
+  if (Platform.OS === 'android') {
+    for (const pkg of HUBERA_MAPS_PACKAGES) {
+      if (data) {
+        try {
+          await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+            data,
+            packageName: pkg,
+            className: HUBERA_MAPS_ACTIVITY,
+          });
+          return true;
+        } catch {
+          /* cette activité ne prend pas l’URI */
+        }
+      }
+      try {
+        await IntentLauncher.startActivityAsync('android.intent.action.MAIN', {
+          category: 'android.intent.category.LAUNCHER',
+          packageName: pkg,
+          className: HUBERA_MAPS_ACTIVITY,
+        });
+        return true;
+      } catch {
+        /* paquet absent */
+      }
+    }
+  }
+  return tryOpen(HUBERA_MAPS_OTA);
+}
 
 async function tryOpen(url: string): Promise<boolean> {
   try {
@@ -135,32 +170,10 @@ async function openGoogleMaps(opts: {
   const label = opts.label;
 
   if (Platform.OS === 'android') {
-    // Avec vias : directions HTTPS encodées (intent navigation ne gère pas les vias).
-    if (hasVia) {
-      const pathUrl = buildGoogleMapsDirUrl({
-        destination: opts.destination,
-        origin: opts.origin,
-        waypoints: wps,
-        navigate: false,
-        destinationLabel: label,
-      });
-      if (await tryOpen(pathUrl)) return true;
-    }
-    // Sans via : intent navigation natif (origin = GPS Maps courant — ne pas forcer HTTPS).
-    if (await tryOpen(`google.navigation:q=${dest}&mode=d`)) {
-      return true;
-    }
-    const classic = buildGoogleMapsDirUrl({
-      destination: opts.destination,
-      origin: opts.origin,
-      navigate: false,
-      destinationLabel: label,
-    });
-    if (await tryOpen(classic)) return true;
     const q = label?.trim()
       ? encodeURIComponent(`${label.trim()}@${dest}`)
       : dest;
-    return tryOpen(`geo:0,0?q=${q}`);
+    return openHuberaMaps(`geo:0,0?q=${q}`);
   }
 
   if (Platform.OS === 'ios') {
@@ -218,8 +231,8 @@ export async function openGoogleMapsHere(opts?: {
   const hasFix =
     lat != null && lon != null && Number.isFinite(lat) && Number.isFinite(lon);
   if (Platform.OS === 'android') {
-    if (hasFix && (await tryOpen(`geo:${lat},${lon}?q=${lat},${lon}`))) return true;
-    if (await tryOpen('geo:0,0?q=')) return true;
+    if (hasFix) return openHuberaMaps(`geo:${lat},${lon}?q=${lat},${lon}`);
+    return openHuberaMaps();
   }
   if (hasFix) {
     return tryOpen(`https://www.google.com/maps/@${lat},${lon},17z`);

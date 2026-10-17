@@ -1,7 +1,7 @@
 /** Helpers niveau carburant estimé par véhicule (multi-voitures). */
 
 import type { FillUp, FuelGaugeSource, Vehicle } from '@/types';
-import { previewFillUpFuel } from '@/lib/fuelLevelCore';
+import { acceptedGaugeLiters, previewFillUpFuel } from '@/lib/fuelLevelCore';
 import {
   getActiveTripLite,
   getFillUps,
@@ -14,7 +14,7 @@ import {
 import { blendLearnFactor, estimateTripFuelLiters, gaugeLearnUpdate } from '@/lib/consumptionModel';
 import { recordFuelGaugeReading } from '@/lib/fuelGaugeHistory';
 
-export { previewFillUpFuel };
+export { acceptedGaugeLiters, previewFillUpFuel };
 export type { FillFuelPreview } from '@/lib/fuelLevelCore';
 
 /**
@@ -87,9 +87,10 @@ export async function applyFillUpToFuelEstimate(
   opts?: { ignorePrevious?: boolean }
 ): Promise<number> {
   const preview = previewFillUpFuel(vehicle, fill, opts);
-  const stored = preview.exceedsCapacity
-    ? Math.min(vehicle.tankCapacity, preview.afterLiters)
-    : preview.afterLiters;
+  const stored = acceptedGaugeLiters(preview, vehicle.estimatedFuelLiters);
+  if (preview.exceedsCapacity || stored == null) {
+    return vehicle.estimatedFuelLiters ?? 0;
+  }
   await updateVehicle(vehicle.id, { estimatedFuelLiters: stored });
   await recordFuelGaugeReading({
     vehicleId: vehicle.id,

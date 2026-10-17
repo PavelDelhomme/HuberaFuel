@@ -11,6 +11,8 @@ const native = NativeModules.HuberaIdSso as
   | {
       listAccounts: () => Promise<HuberaIdDeviceAccount[]>;
       saveSession: (email: string, accessToken: string, refreshToken: string) => Promise<void>;
+      idInstalled: () => Promise<boolean>;
+      openIdInstall: () => Promise<void>;
     }
   | undefined;
 
@@ -21,6 +23,24 @@ export async function listHuberaAccounts(): Promise<HuberaIdDeviceAccount[]> {
     return (rows || []).filter((a) => a?.email);
   } catch {
     return [];
+  }
+}
+
+export async function isHuberaIdInstalled(): Promise<boolean> {
+  if (Platform.OS !== 'android' || !native?.idInstalled) return true;
+  try {
+    return await native.idInstalled();
+  } catch {
+    return false;
+  }
+}
+
+export async function openHuberaIdInstall(): Promise<void> {
+  if (Platform.OS !== 'android' || !native?.openIdInstall) return;
+  try {
+    await native.openIdInstall();
+  } catch {
+    /* page d’install indisponible */
   }
 }
 

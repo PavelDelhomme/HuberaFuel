@@ -21,7 +21,11 @@ sed -i "s/versionName \"[^\"]*\"/versionName \"${VERSION}\"/" android/app/build.
 # Rebuild JS embed with correct expo extra (APP_FLAVOR)
 # assembleRelease lit le binaire déjà généré ; forcer un clean du bundle RN
 cd android
-./gradlew :app:clean :app:assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
+GRADLE_ARGS=(-PreactNativeArchitectures=arm64-v8a --no-daemon)
+if [[ "$FLAVOR" == "prod" ]]; then
+  GRADLE_ARGS+=(-PhuberaAppId=true)
+fi
+./gradlew :app:clean :app:assembleRelease "${GRADLE_ARGS[@]}"
 cd "$ROOT"
 
 # Vérif signature (même keystore EAS que prod)

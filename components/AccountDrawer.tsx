@@ -25,7 +25,6 @@ import { CountryPickerCard } from '@/components/CountryPickerCard';
 import { isManagerEmail, API_URL, getLocalAppVersion, fetchAppVersion, compareVersions } from '@/lib/api';
 import { getAppFlavor } from '@/lib/appFlavor';
 import { notify } from '@/lib/notify';
-import { openOrWeb } from '@/lib/huberaAppLauncher';
 
 type RowProps = {
   icon: keyof typeof Ionicons.glyphMap;
@@ -223,25 +222,6 @@ export function AccountDrawer() {
                 </View>
               </>
             )}
-
-            <Text style={[styles.section, { color: colors.textSecondary }]}>Apps Hubera</Text>
-            {[
-              { label: 'Music', slug: 'music', icon: 'musical-notes-outline' as const },
-              { label: 'Maps', slug: 'maps', icon: 'map-outline' as const },
-              { label: 'Docs', slug: 'docs', icon: 'book-outline' as const },
-              { label: 'Mail', slug: 'mail', icon: 'mail-outline' as const },
-              { label: 'Compte', slug: 'id', icon: 'person-outline' as const },
-            ].map((app) => (
-              <DrawerRow
-                key={app.label}
-                icon={app.icon}
-                label={app.label}
-                onPress={() => {
-                  closeDrawer();
-                  void openOrWeb(app.slug);
-                }}
-              />
-            ))}
 
             <Text style={[styles.section, { color: colors.textSecondary }]}>Application</Text>
             <DrawerRow

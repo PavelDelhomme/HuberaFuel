@@ -70,6 +70,8 @@ export function encodeMapsFuelSnap(opts: {
   }>;
   fills: Array<{ date?: string; liters?: number; totalCost?: number; note?: string | null; vehicleId?: number | null }>;
   budget?: { amount?: number; spent?: number; name?: string } | null;
+  /** Dernier véhicule choisi (gasoil_last_vehicle_id). */
+  lastVehicleId?: number;
 }): string {
   const veh = (opts.vehicles || []).slice(0, 8).map((v) => {
     const tank = Number(v.tankCapacity) || 0;
@@ -100,7 +102,10 @@ export function encodeMapsFuelSnap(opts: {
   const bud = b
     ? [Math.round(Number(b.amount) || 0), Math.round(Number(b.spent) || 0), clip(b.name)].join(FIELD)
     : '';
-  return ['V', veh.join(ROW), 'F', fills.join(ROW), 'B', bud].join('||');
+  const last = Number(opts.lastVehicleId) || 0;
+  const parts = ['V', veh.join(ROW), 'F', fills.join(ROW), 'B', bud];
+  if (last > 0) parts.push('L', String(last));
+  return parts.join('||');
 }
 
 export function decodeMapsTripPack(raw: string | null | undefined): MapsTripPackItem[] {

@@ -23,6 +23,10 @@ export type HuberaSlug =
 
 type Spec = { slug: HuberaSlug; host: string; packages: string[]; scheme: string };
 
+const BLOCKED_PACKAGES = new Set(['app.organicmaps']);
+/** Expo n’applique packageName que si className est fourni. */
+const MAPS_ACTIVITY = 'ovh.delhomme.maps.MainActivity';
+
 const CATALOG: Spec[] = [
   { slug: 'music', host: 'music.hubera.cloud', packages: ['cloud.hubera.music', 'ovh.delhomme.ytmusic'], scheme: 'hubera-music' },
   { slug: 'maps', host: 'maps.hubera.cloud', packages: ['cloud.hubera.maps', 'ovh.delhomme.maps'], scheme: 'hubera-maps' },
@@ -46,16 +50,22 @@ export async function openOrWeb(slug: string): Promise<void> {
   };
   if (Platform.OS === 'android') {
     for (const pkg of spec.packages) {
+      if (BLOCKED_PACKAGES.has(pkg)) continue;
       try {
         await IntentLauncher.startActivityAsync('android.intent.action.MAIN', {
           category: 'android.intent.category.LAUNCHER',
           packageName: pkg,
+          className: spec.slug === 'maps' ? MAPS_ACTIVITY : undefined,
         });
         return;
       } catch {
         /* paquet absent */
       }
     }
+  }
+  if (spec.slug === 'maps') {
+    await Linking.openURL(`https://${spec.host}`);
+    return;
   }
   const schemeUrl = `${spec.scheme}://open`;
   try {

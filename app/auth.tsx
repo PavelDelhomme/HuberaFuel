@@ -7,7 +7,10 @@ import {
   Platform,
   ScrollView,
   Linking,
+  Modal,
+  Pressable,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { useApp } from '@/context/AppContext';
@@ -17,15 +20,41 @@ import { Button } from '@/components/Button';
 import { QrWebLoginPanel } from '@/components/QrWebLoginPanel';
 import { API_URL, forgotPassword } from '@/lib/api';
 import { getAppFlavor } from '@/lib/appFlavor';
-import { listHuberaAccounts, type HuberaIdDeviceAccount } from '@/lib/huberaIdSso';
+import {
+  isHuberaIdInstalled,
+  listHuberaAccounts,
+  openHuberaIdInstall,
+  type HuberaIdDeviceAccount,
+} from '@/lib/huberaIdSso';
+
+const AVATAR = ['#1A73E8', '#188038', '#E37400', '#9334E6', '#007B83', '#C5221F', '#1967D2', '#0D7377'];
+
+function avatarColor(email: string) {
+  let hash = 0;
+  const key = email.toLowerCase();
+  for (let i = 0; i < key.length; i++) hash = (Math.imul(hash, 31) + key.charCodeAt(i)) >>> 0;
+  return AVATAR[hash % AVATAR.length];
+}
+
+function accountTitle(email: string) {
+  const local = email.split('@')[0]?.trim() || email;
+  if (!local) return email;
+  return local.charAt(0).toUpperCase() + local.slice(1);
+}
+
+function accountInitial(email: string) {
+  const title = accountTitle(email);
+  return title ? title.charAt(0).toUpperCase() : '?';
+}
 
 export default function AuthScreen() {
   const { login, loginWithHubera, register } = useAuth();
   const { refresh } = useApp();
   const { colors } = useTheme();
   const flavor = getAppFlavor();
+  const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<'login' | 'register'>('login');
-  const [email, setEmail] = useState(flavor.defaultLoginEmail || '');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [name, setName] = useState('');
@@ -34,17 +63,15 @@ export default function AuthScreen() {
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
   const [huberaAccounts, setHuberaAccounts] = useState<HuberaIdDeviceAccount[]>([]);
-
-  useEffect(() => {
-    if (flavor.defaultLoginEmail && !email) {
-      setEmail(flavor.defaultLoginEmail);
-    }
-  }, [flavor.defaultLoginEmail, email]);
+  const [chooserOpen, setChooserOpen] = useState(Platform.OS === 'android');
+  const [idInstalled, setIdInstalled] = useState(true);
 
   useEffect(() => {
     if (Platform.OS !== 'android') return;
-    listHuberaAccounts().then((rows) => {
-      if (rows.length) setHuberaAccounts(rows);
+    Promise.all([listHuberaAccounts(), isHuberaIdInstalled()]).then(([rows, installed]) => {
+      setHuberaAccounts(rows);
+      setIdInstalled(installed);
+      setChooserOpen(true);
     });
   }, []);
 
@@ -96,7 +123,80 @@ export default function AuthScreen() {
       style={[styles.container, { backgroundColor: colors.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView contentContainerStyle={styles.content}>
+      <Modal visible={chooserOpen && mode === 'login'} transparent animationType="fade">
+        <View
+          style={[
+            styles.chooserBackdrop,
+            { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 },
+          ]}
+        >
+          <View style={[styles.chooserCard, { backgroundColor: colors.background }]}>
+            <Text style={[styles.chooserTitle, { color: colors.text }]}>Choisir un compte</Text>
+            {huberaAccounts.map((acc) => (
+              <Pressable
+                key={acc.email}
+                onPress={async () => {
+                  setChooserOpen(false);
+                  if (!acc.accessToken) {
+                    setError('Session absente');
+                    return;
+                  }
+                  setLoading(true);
+                  try {
+                    await loginWithHubera(acc.accessToken);
+                    await refresh();
+                    router.replace('/' as never);
+                  } catch (e) {
+                    setError(e instanceof Error ? e.message : 'SSO refusé.');
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+                style={styles.chooserRow}
+              >
+                <View style={[styles.avatar, { backgroundColor: avatarColor(acc.email) }]}>
+                  <Text style={styles.avatarLetter}>{accountInitial(acc.email)}</Text>
+                </View>
+                <View style={styles.chooserText}>
+                  <Text style={[styles.chooserName, { color: colors.text }]} numberOfLines={1}>
+                    {accountTitle(acc.email)}
+                  </Text>
+                  <Text style={[styles.chooserMail, { color: colors.textSecondary }]} numberOfLines={1}>
+                    {acc.email}
+                  </Text>
+                </View>
+              </Pressable>
+            ))}
+            {!idInstalled && (
+              <Pressable onPress={() => openHuberaIdInstall()} style={styles.chooserRow}>
+                <View style={[styles.avatar, styles.avatarAdd, { borderColor: colors.textSecondary }]}>
+                  <Text style={[styles.avatarAddMark, { color: colors.text }]}>+</Text>
+                </View>
+                <Text style={[styles.chooserName, { color: colors.text }]}>Installer Hubera ID</Text>
+              </Pressable>
+            )}
+            <Pressable
+              onPress={() => {
+                setEmail('');
+                setPassword('');
+                setChooserOpen(false);
+              }}
+              style={styles.chooserRow}
+            >
+              <View style={[styles.avatar, styles.avatarAdd, { borderColor: colors.textSecondary }]}>
+                <Text style={[styles.avatarAddMark, { color: colors.text }]}>+</Text>
+              </View>
+              <Text style={[styles.chooserName, { color: colors.text }]}>Ajouter un compte</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+      <ScrollView
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 24 },
+        ]}
+      >
         <Text style={[styles.title, { color: colors.text }]}>
           {mode === 'login' ? 'Connexion' : 'Créer un compte'}
         </Text>
@@ -109,15 +209,7 @@ export default function AuthScreen() {
           <Text style={{ color: flavor.accent, fontWeight: '800', fontSize: 13 }}>
             {flavor.shortName} · {flavor.label}
           </Text>
-          <Text style={{ color: colors.textSecondary, fontSize: 11, marginTop: 2 }}>
-            Package {flavor.androidPackage} — même compte que l’app Hubera Fuel (Nothing / Android)
-          </Text>
         </View>
-        <Text style={[styles.sub, { color: colors.textSecondary }]}>
-          {mode === 'login'
-            ? 'Même compte que Hubera ID / Maps. Si le mot de passe Hubera ID est refusé, c’est le mot de passe Fuel.'
-            : 'Compte utilisateur standard (pas admin). Code d’invitation requis. Un email de validation sera envoyé ; un gestionnaire peut aussi valider depuis Administration.'}
-        </Text>
         {mode === 'login' && Platform.OS === 'web' && (
           <QrWebLoginPanel
             onLoggedIn={async () => {
@@ -135,39 +227,43 @@ export default function AuthScreen() {
           />
         )}
         {mode === 'login' && huberaAccounts.length > 0 && (
-          <View style={{ marginBottom: 16 }}>
+          <View style={{ marginBottom: 8 }}>
             {huberaAccounts.map((acc) => (
-              <Button
+              <Pressable
                 key={acc.email}
-                title={`Continuer avec ${acc.email}`}
-                variant="outline"
                 onPress={async () => {
                   setError('');
+                  if (!acc.accessToken) {
+                    setError('Session absente');
+                    return;
+                  }
                   setLoading(true);
                   try {
                     await loginWithHubera(acc.accessToken);
                     await refresh();
                     router.replace('/' as never);
                   } catch (e) {
-                    setEmail(acc.email);
-                    setError(
-                      e instanceof Error
-                        ? e.message
-                        : 'SSO refusé — mot de passe Fuel une fois.',
-                    );
+                    setError(e instanceof Error ? e.message : 'SSO refusé.');
                   } finally {
                     setLoading(false);
                   }
                 }}
-                style={{ marginBottom: 8 }}
-              />
+                style={styles.chooserRow}
+              >
+                <View style={[styles.avatar, { backgroundColor: avatarColor(acc.email) }]}>
+                  <Text style={styles.avatarLetter}>{accountInitial(acc.email)}</Text>
+                </View>
+                <View style={styles.chooserText}>
+                  <Text style={[styles.chooserName, { color: colors.text }]} numberOfLines={1}>
+                    {accountTitle(acc.email)}
+                  </Text>
+                  <Text style={[styles.chooserMail, { color: colors.textSecondary }]} numberOfLines={1}>
+                    {acc.email}
+                  </Text>
+                </View>
+              </Pressable>
             ))}
           </View>
-        )}
-        {mode === 'login' && (
-          <Text style={{ color: colors.textSecondary, fontWeight: '700', marginBottom: 10 }}>
-            Ou email / mot de passe Hubera
-          </Text>
         )}
         {mode === 'register' && (
           <>
@@ -274,4 +370,33 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   sub: { fontSize: 14, marginBottom: 20, lineHeight: 20 },
+  chooserBackdrop: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: 24,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  chooserCard: { borderRadius: 28, paddingVertical: 12, paddingHorizontal: 8 },
+  chooserTitle: { fontSize: 22, fontWeight: '400', paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 },
+  chooserRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 64,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+  },
+  avatarLetter: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  avatarAdd: { backgroundColor: 'transparent', borderWidth: 1 },
+  avatarAddMark: { fontSize: 20 },
+  chooserText: { flex: 1 },
+  chooserName: { fontSize: 16, fontWeight: '500' },
+  chooserMail: { fontSize: 14, marginTop: 2 },
 });

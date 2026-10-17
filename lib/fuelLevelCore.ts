@@ -71,3 +71,12 @@ export function previewFillUpFuel(
     neededCapacity: exceeds ? cap(after) : tank,
   };
 }
+
+/**
+ * Litres à écrire sur la jauge.
+ * Dépassement : on garde le niveau précédent (pas de plafond silencieux à la capacité).
+ */
+export function acceptedGaugeLiters(preview: FillFuelPreview, previous: number | null): number | null {
+  if (preview.exceedsCapacity) return previous;
+  return preview.afterLiters;
+}

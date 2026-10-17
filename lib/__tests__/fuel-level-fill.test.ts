@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { previewFillUpFuel } from '@/lib/fuelLevelCore';
+import { acceptedGaugeLiters, previewFillUpFuel } from '@/lib/fuelLevelCore';
 
 const v = {
   tankCapacity: 50,
@@ -29,6 +29,7 @@ describe('previewFillUpFuel', () => {
     expect(p.exceedsCapacity).toBe(true);
     expect(p.afterLiters).toBe(65);
     expect(p.neededCapacity).toBe(65);
+    expect(acceptedGaugeLiters(p, 40)).toBe(40);
   });
 
   it('niveau inconnu : jauge = litres saisis', () => {

@@ -37,7 +37,11 @@ fi
 
 echo "==> Assemble release $VERSION ($VERSION_CODE)"
 cd android
-./gradlew :app:assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
+GRADLE_ARGS=(-PreactNativeArchitectures=arm64-v8a --no-daemon)
+if [[ "$APP_FLAVOR" == "prod" ]]; then
+  GRADLE_ARGS+=(-PhuberaAppId=true)
+fi
+./gradlew :app:assembleRelease "${GRADLE_ARGS[@]}"
 cd "$ROOT"
 
 APK="$ROOT/android/app/build/outputs/apk/release/app-release.apk"

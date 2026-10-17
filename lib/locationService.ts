@@ -25,12 +25,13 @@ import {
   writeLiveTripBuffer,
   type LiveTripBuffer,
 } from '@/lib/liveTripBuffer';
+import { metaFromTrip, trackingShouldRun, type TrackingMeta } from '@/lib/trackingMeta';
 
 interface LocationTaskData {
   locations: Location.LocationObject[];
 }
 
-type LiveMeta = { id: number; vehicleId: number; isPaused: boolean; isActive: boolean };
+type LiveMeta = TrackingMeta;
 
 /** Sérialise les mises à jour trajet (évite last-write-wins). */
 let tripWriteChain: Promise<void> = Promise.resolve();
@@ -40,6 +41,8 @@ let startInFlight: Promise<boolean> | null = null;
 let livePointsCache: { tripId: number; vehicleId: number; points: RoutePoint[] } | null = null;
 /** Watch premier plan : certains OEM n’envoient pas les callbacks FGS si l’app est ouverte. */
 let foregroundWatch: Location.LocationSubscription | null = null;
+/** Évite d’empiler les arrêts FGS quand le trajet est déjà clos ou en pause. */
+let orphanStopTimer: ReturnType<typeof setTimeout> | null = null;
 
 function enqueueTripUpdate(fn: () => Promise<void>): Promise<void> {
   tripWriteChain = tripWriteChain.then(fn, fn);
@@ -107,18 +110,19 @@ function pointFromLocation(loc: Location.LocationObject, prev: RoutePoint | null
   return entry;
 }
 
+function scheduleOrphanTrackingStop(): void {
+  if (orphanStopTimer) return;
+  orphanStopTimer = setTimeout(() => {
+    orphanStopTimer = null;
+    void stopBackgroundTracking();
+  }, 0);
+}
+
 async function resolveLiveMeta(): Promise<LiveMeta | null> {
   try {
-    const lite = await getActiveTripLite();
-    if (lite?.isActive && !lite.isPaused) {
-      return {
-        id: lite.id,
-        vehicleId: lite.vehicleId,
-        isPaused: false,
-        isActive: true,
-      };
-    }
-    if (lite && !lite.isActive) return null;
+    const fromLite = metaFromTrip(await getActiveTripLite());
+    if (fromLite === 'inactive') return null;
+    if (fromLite !== 'absent') return fromLite;
   } catch (e) {
     console.warn('[gps] getActiveTripLite failed', e);
   }
@@ -127,10 +131,9 @@ async function resolveLiveMeta(): Promise<LiveMeta | null> {
   if (!buf) return null;
   try {
     const byId = await getTripById(buf.tripId);
-    if (byId && !byId.isActive) return null;
-    if (byId?.isActive && !byId.isPaused) {
-      return { id: byId.id, vehicleId: byId.vehicleId, isPaused: false, isActive: true };
-    }
+    const fromDb = metaFromTrip(byId);
+    if (fromDb === 'inactive') return null;
+    if (fromDb !== 'absent') return fromDb;
   } catch {
     /* SQLite headless indisponible */
   }
@@ -212,8 +215,9 @@ async function persistLivePoints(
 async function applyGpsLocations(locations: Location.LocationObject[]): Promise<void> {
   const batch = locations.length > 16 ? locations.slice(-16) : locations;
   const meta = await resolveLiveMeta();
-  if (!meta || meta.isPaused || !meta.isActive) {
+  if (!trackingShouldRun(meta)) {
     if (!meta) clearLivePointsCache();
+    scheduleOrphanTrackingStop();
     return;
   }
 

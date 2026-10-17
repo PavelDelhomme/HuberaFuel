@@ -18,6 +18,7 @@ import { assertApkIdentity } from './apkMeta.js';
 import { applyPersonalCommute, applyPersonalFillUp, fetchCommuteRoute } from './personalCommute.js';
 import { huberaLegacyStatus, huberaNotice, pingFromRequest } from './huberaLegacy.js';
 import { betaChannelBlocked } from './betaChannel.js';
+import { applyAttributionKeep } from './attributionKeep.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 4000);
@@ -906,6 +907,7 @@ app.get('/api/version', (req, res) => {
       ((clientVc > 0 && Number(latest.version_code) > clientVc) ||
         (clientVer && compareSemver(latest.version, clientVer) > 0) ||
         (!clientVer && !clientVc)),
+    mandatory: false,
     apkUrl,
     apkAvailable,
     apkSha256: apkAvailable ? latest?.apk_sha256 || null : null,
@@ -1756,6 +1758,16 @@ app.put('/api/sync', auth, syncLimiter, (req, res) => {
   const body = req.body?.data ?? req.body ?? {};
   if (typeof body !== 'object' || body === null || Array.isArray(body)) {
     return res.status(400).json({ error: 'Payload sync invalide' });
+  }
+  try {
+    const keepPath = path.join(DATA_DIR, 'vehicle-attribution-keep.json');
+    const rawKeep = fs.readFileSync(keepPath, 'utf8');
+    const keep = JSON.parse(rawKeep);
+    if (keep && (!keep.userId || String(keep.userId) === String(req.user.sub))) {
+      applyAttributionKeep(body, keep);
+    }
+  } catch {
+    /* pas de garde, ou fichier illisible : on enregistre le snapshot tel quel */
   }
   const payload = JSON.stringify(body);
   if (payload.length > 12_000_000) {

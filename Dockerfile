@@ -15,6 +15,7 @@ RUN npx expo export --platform web --output-dir dist \
   && cp -f public/lab-connect.html dist/lab-connect.html \
   && cp -f public/manifest.webmanifest dist/manifest.webmanifest \
   && cp -f public/sw.js dist/sw.js \
+  && cp -f public/updates.json dist/updates.json \
   && cp -f assets/icon.png dist/icon.png \
   && cp -f assets/icon.png dist/apple-touch-icon.png \
   && VERSION=$(node -p "require('./app.json').expo.version") \

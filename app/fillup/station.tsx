@@ -36,7 +36,7 @@ import { recordFuelGaugeReading } from '@/lib/fuelGaugeHistory';
 import { seedLiveTripBuffer, clearLiveTripBuffer } from '@/lib/liveTripBuffer';
 import { launchGoogleMapsNavigation } from '@/lib/mapsNavigation';
 import { fuelLabel, isSaneFuelPricePerLiter } from '@/lib/fuelPrices';
-import { applyFillUpToFuelEstimate } from '@/lib/fuelLevel';
+import { applyFillUpToFuelEstimate, previewFillUpFuel } from '@/lib/fuelLevel';
 import {
   createFillUp,
   createTrip,
@@ -305,6 +305,15 @@ export default function StationTripScreen() {
         }
         // Relire le véhicule après addTrackedKm (sinon odo React périmé → km perdus au createFillUp).
         const fresh = (await getVehicleById(activeVehicle.id)) || activeVehicle;
+        const preview = previewFillUpFuel(fresh, { liters: L, isFull });
+        if (!isFull && preview.exceedsCapacity) {
+          notify(
+            'Plus que la capacité',
+            `${L.toFixed(1)} L dépasse le réservoir noté à ${fresh.tankCapacity} L. Corrige la saisie, ou passe par « Ajouter un plein » pour réajuster le réservoir. Le plein n’est pas enregistré.`
+          );
+          setLoading(false);
+          return;
+        }
         const odoNow = fresh.hasOdometer !== false ? displayOdometerKm(fresh) : 0;
         let distanceSinceLastKm: number | null = null;
         const fills = await getFillUps(activeVehicle.id);

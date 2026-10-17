@@ -1,0 +1,39 @@
+{
+  "app": "hubera_fuel",
+  "slug": "fuel",
+  "name": "Hubera Fuel",
+  "version": "1.4.180",
+  "versionCode": 204,
+  "package": "cloud.hubera.fuel",
+  "signingCertSha256": "13c3be90a99fb1a944bc5eedd782ae154ac4ab545bc4e92d53ba0040273ea5f2",
+  "min_supported": "1.0.0",
+  "apk": "https://fuel.hubera.cloud/api/download/gasoil-tracking-1.4.180-vc204-hubera.apk",
+  "apk_url": "https://fuel.hubera.cloud/api/download/gasoil-tracking-1.4.180-vc204-hubera.apk",
+  "sha256": "db555ee327d2f0313be661ee560698ce961612c4659fa4e381dc8a87c2b40610",
+  "apkSize": 46563560,
+  "apkAvailable": true,
+  "mandatory": false,
+  "forceUpdate": false,
+  "notes": "Hubera Fuel 1.4.180. Le menu ne liste plus les autres apps. Mise à jour proposée, jamais forcée.",
+  "published_at": "2026-10-17T13:40:00+00:00",
+  "canonical": {
+    "package": "cloud.hubera.fuel",
+    "version": "1.4.180",
+    "versionCode": 204,
+    "apk": "https://fuel.hubera.cloud/api/download/gasoil-tracking-1.4.180-vc204-hubera.apk",
+    "apk_url": "https://fuel.hubera.cloud/api/download/gasoil-tracking-1.4.180-vc204-hubera.apk",
+    "sha256": "db555ee327d2f0313be661ee560698ce961612c4659fa4e381dc8a87c2b40610",
+    "apkSize": 46563560,
+    "signingCertSha256": "13c3be90a99fb1a944bc5eedd782ae154ac4ab545bc4e92d53ba0040273ea5f2"
+  },
+  "legacy": {
+    "package": "com.gasoiltracking.app",
+    "version": "1.4.180",
+    "versionCode": 204,
+    "apk": "https://fuel.hubera.cloud/api/download/gasoil-tracking-1.4.180-vc204-legacy.apk",
+    "apk_url": "https://fuel.hubera.cloud/api/download/gasoil-tracking-1.4.180-vc204-legacy.apk",
+    "sha256": "6b45fedc04318bf0e40dd3b7aca9f87d1ee99f254dc2b3cb95d4d4f8186ae23f",
+    "apkSize": 46563596,
+    "signingCertSha256": "13c3be90a99fb1a944bc5eedd782ae154ac4ab545bc4e92d53ba0040273ea5f2"
+  }
+}

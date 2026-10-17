@@ -14,6 +14,13 @@ import type {
   VehicleMaintenance,
 } from '@/types';
 import { refreshMaintenanceStatus } from '@/lib/vehicleMaintenance';
+import {
+  LAST_VEHICLE_STORAGE_KEY,
+  MAPS_FUEL_VEHICLE_KEY,
+  firstStoredVehicleRaw,
+  parseStoredVehicleId,
+  resolveActiveVehicleId,
+} from '@/lib/lastVehicle';
 
 const STORAGE_KEY = 'gasoil_tracking_v1';
 
@@ -134,26 +141,58 @@ export async function getVehicles(): Promise<Vehicle[]> {
 
 export async function getActiveVehicle(): Promise<Vehicle | null> {
   const s = await load();
-  const active = s.vehicles.find((v) => v.isActive);
-  if (active) return active;
-  try {
-    const last = await AsyncStorage.getItem('gasoil_last_vehicle_id');
-    if (last) {
-      const id = Number(last);
-      const v = s.vehicles.find((x) => x.id === id);
-      if (v) {
-        s.vehicles = s.vehicles.map((x) => ({ ...x, isActive: x.id === id }));
-        await save(s);
-        return { ...v, isActive: true };
-      }
-    }
-  } catch {
-    /* ignore */
+  const lastTripAtByVehicle: Record<number, number> = {};
+  for (const t of s.trips || []) {
+    if (t.status === 'rejected') continue;
+    const ms = Date.parse(t.endTime || t.startTime || '') || 0;
+    const id = Number(t.vehicleId);
+    if (id && ms > (lastTripAtByVehicle[id] || 0)) lastTripAtByVehicle[id] = ms;
   }
-  if (s.vehicles[0]) {
+  let storedId: number | null = null;
+  try {
+    const primary = await AsyncStorage.getItem(LAST_VEHICLE_STORAGE_KEY);
+    const shared = await AsyncStorage.getItem(MAPS_FUEL_VEHICLE_KEY);
+    storedId = parseStoredVehicleId(firstStoredVehicleRaw(primary, shared));
+  } catch {
+    storedId = null;
+  }
+  const resolved = resolveActiveVehicleId({
+    storedId,
+    dbActiveIds: s.vehicles.filter((v) => v.isActive).map((v) => v.id),
+    lastTripAtByVehicle,
+    vehicleIds: s.vehicles.map((v) => v.id),
+  });
+  if (resolved != null) {
+    const v = s.vehicles.find((x) => x.id === resolved);
+    if (v) {
+      s.vehicles = s.vehicles.map((x) => ({ ...x, isActive: x.id === resolved }));
+      await save(s);
+      try {
+        await AsyncStorage.setItem(LAST_VEHICLE_STORAGE_KEY, String(resolved));
+      } catch {
+        /* ignore */
+      }
+      return { ...v, isActive: true };
+    }
+  }
+  const active = s.vehicles.filter((v) => v.isActive);
+  if (active.length === 1) {
+    try {
+      await AsyncStorage.setItem(LAST_VEHICLE_STORAGE_KEY, String(active[0].id));
+    } catch {
+      /* ignore */
+    }
+    return active[0];
+  }
+  if (active.length === 0 && s.vehicles.length === 1) {
     const id = s.vehicles[0].id;
     s.vehicles = s.vehicles.map((x) => ({ ...x, isActive: x.id === id }));
     await save(s);
+    try {
+      await AsyncStorage.setItem(LAST_VEHICLE_STORAGE_KEY, String(id));
+    } catch {
+      /* ignore */
+    }
     return { ...s.vehicles[0], isActive: true };
   }
   return null;
@@ -239,7 +278,7 @@ export async function setActiveVehicle(id: number): Promise<void> {
   s.vehicles = s.vehicles.map((v) => ({ ...v, isActive: v.id === id }));
   await save(s);
   try {
-    await AsyncStorage.setItem('gasoil_last_vehicle_id', String(id));
+    await AsyncStorage.setItem(LAST_VEHICLE_STORAGE_KEY, String(id));
   } catch {
     /* ignore */
   }

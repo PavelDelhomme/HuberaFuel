@@ -2,7 +2,7 @@
   "expo": {
     "name": "Hubera Fuel",
     "slug": "gasoil-tracking",
-    "version": "1.4.173",
+    "version": "1.4.180",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "gasoiltracking",
@@ -79,7 +79,7 @@
           "apiKey": "VOTRE_CLE_GOOGLE_MAPS_ANDROID"
         }
       },
-      "versionCode": 197,
+      "versionCode": 204,
       "intentFilters": [
         {
           "action": "VIEW",
