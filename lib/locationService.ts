@@ -493,6 +493,42 @@ export function clearLivePointsAfterFinish(): void {
   clearLivePointsCache();
 }
 
+export type LocationReadiness = 'ready' | 'denied' | 'off';
+
+/** Réglage Android + permission, sans ouvrir l’écran Localisation. */
+export async function locationReadiness(): Promise<LocationReadiness> {
+  try {
+    const perm = await Location.getForegroundPermissionsAsync();
+    if (perm.status !== 'granted') return 'denied';
+  } catch {
+    return 'denied';
+  }
+  try {
+    return (await Location.hasServicesEnabledAsync()) ? 'ready' : 'off';
+  } catch {
+    return 'ready';
+  }
+}
+
+export function gpsMissText(
+  ready: LocationReadiness,
+  kind: 'station' | 'prices' | 'resume',
+): string {
+  if (kind === 'resume') {
+    if (ready === 'denied') return 'Autorisez la localisation pour reprendre le suivi.';
+    if (ready === 'off') return 'Activez la localisation pour reprendre le suivi.';
+    return 'Position pas encore trouvée. Le suivi reprend dès qu’un point arrive.';
+  }
+  if (kind === 'prices') {
+    if (ready === 'denied') return 'Autorisez la localisation, ou choisissez une zone spécifique ci‑dessous.';
+    if (ready === 'off') return 'Activez la localisation, ou choisissez une zone spécifique ci‑dessous.';
+    return 'Position pas encore trouvée. Réessayez, ou choisissez une zone ci‑dessous.';
+  }
+  if (ready === 'denied') return 'Autorisez la localisation pour trouver une station.';
+  if (ready === 'off') return 'Activez la localisation pour trouver une station.';
+  return 'Position pas encore trouvée. Réessayez : la localisation est déjà activée.';
+}
+
 export async function ensureLocationEnabled(): Promise<boolean> {
   try {
     if (await Location.hasServicesEnabledAsync()) return true;

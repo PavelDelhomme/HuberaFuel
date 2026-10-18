@@ -32,7 +32,7 @@ import { computeBudgetOutlook } from '@/lib/budgetOutlook';
 import { fuelGaugeSaveSummary, fuelRemainingTone, fuelToneColor, setFuelLiters } from '@/lib/fuelLevel';
 import { estimateCommutesRemaining } from '@/lib/commuteRange';
 import { checkNearestStationReach } from '@/lib/nearestStationReach';
-import { getCurrentLocation } from '@/lib/locationService';
+import { getCurrentLocation, gpsMissText, locationReadiness } from '@/lib/locationService';
 import { FuelGaugeSlider } from '@/components/FuelGaugeSlider';
 import { TutorialAnchor } from '@/components/TutorialAnchor';
 import type { ConsumptionStats, Place, SinceLastFillStats, Trip, VehicleMaintenance } from '@/types';
@@ -230,7 +230,7 @@ export default function HomeScreen() {
     try {
       const loc = await getCurrentLocation();
       if (!loc) {
-        notify('GPS', 'Activez la localisation pour trouver une station.');
+        notify('GPS', gpsMissText(await locationReadiness(), 'station'));
         return;
       }
       const res = await checkNearestStationReach({

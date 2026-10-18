@@ -55,6 +55,8 @@ import {
   seedLivePointsCache,
   clearLivePointsAfterFinish,
   getCurrentLocation,
+  gpsMissText,
+  locationReadiness,
   openGoogleMapsSearch,
   peekLiveRouteTail,
   peekLiveTripId,
@@ -1504,7 +1506,7 @@ export default function TripScreen() {
     const ok = await startBackgroundTracking({ forceRestart: true });
     await refresh();
     if (!ok) {
-      notify('GPS', 'Vérifiez les permissions localisation.');
+      notify('GPS', gpsMissText(await locationReadiness(), 'resume'));
     }
   };
 

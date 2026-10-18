@@ -22,7 +22,7 @@ import { useApp } from '@/context/AppContext';
 import { useToast } from '@/context/ToastContext';
 import TripMap from '@/components/TripMap';
 import type { TripMapRef } from '@/components/TripMap.types';
-import { getCurrentLocation, peekLiveRouteTail, peekLiveTripId } from '@/lib/locationService';
+import { getCurrentLocation, gpsMissText, locationReadiness, peekLiveRouteTail, peekLiveTripId } from '@/lib/locationService';
 import { subscribeNativeFixes } from '@/lib/nativeLocation';
 import { fetchSpeedLimitNear, type SpeedLimitInfo } from '@/lib/roadSpeedLimits';
 import { forwardGeocode } from '@/lib/geocode';
@@ -700,7 +700,7 @@ export default function MapsScreen() {
     try {
       if (paused) {
         const ok = await resumeGpsTrip(tripId, refresh);
-        showToast(ok ? 'Suivi repris' : 'Vérifiez les permissions localisation.');
+        showToast(ok ? 'Suivi repris' : gpsMissText(await locationReadiness(), 'resume'));
       } else {
         await pauseGpsTrip(tripId, refresh);
         showToast('Pause — Reprendre ou enregistrer un plein.');

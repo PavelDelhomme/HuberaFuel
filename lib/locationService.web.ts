@@ -204,6 +204,29 @@ export function peekLiveTripId(): null {
   return null;
 }
 
+export type LocationReadiness = 'ready' | 'denied' | 'off';
+
+export async function locationReadiness(): Promise<LocationReadiness> {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) return 'off';
+  return 'ready';
+}
+
+export function gpsMissText(
+  ready: LocationReadiness,
+  kind: 'station' | 'prices' | 'resume',
+): string {
+  if (kind === 'resume') {
+    if (ready === 'off') return 'Activez la localisation pour reprendre le suivi.';
+    return 'Position pas encore trouvée. Le suivi reprend dès qu’un point arrive.';
+  }
+  if (kind === 'prices') {
+    if (ready === 'off') return 'Activez la localisation, ou choisissez une zone spécifique ci‑dessous.';
+    return 'Position pas encore trouvée. Réessayez, ou choisissez une zone ci‑dessous.';
+  }
+  if (ready === 'off') return 'Activez la localisation pour trouver une station.';
+  return 'Position pas encore trouvée. Réessayez : la localisation est déjà activée.';
+}
+
 export async function ensureLocationEnabled(): Promise<boolean> {
   return typeof navigator !== 'undefined' && Boolean(navigator.geolocation);
 }

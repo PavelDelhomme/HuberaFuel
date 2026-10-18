@@ -40,7 +40,7 @@ import {
   type FuelStationPrice,
 } from '@/lib/fuelPrices';
 import { forwardGeocode, reverseGeocode } from '@/lib/geocode';
-import { getCurrentLocation } from '@/lib/locationService';
+import { getCurrentLocation, gpsMissText, locationReadiness } from '@/lib/locationService';
 import { confirm } from '@/lib/notify';
 import { useToast } from '@/context/ToastContext';
 import type { BudgetStatus, FillUp, Place, RecurringRoute } from '@/types';
@@ -265,9 +265,7 @@ export default function BudgetScreen() {
       } else {
         const loc = await getCurrentLocation();
         if (!loc) {
-          setFuelError(
-            'Impossible d’obtenir votre position GPS. Activez la localisation, ou choisissez une zone spécifique ci‑dessous.'
-          );
+          setFuelError(gpsMissText(await locationReadiness(), 'prices'));
           setZoneHint('Position GPS indisponible');
           setFuelLoading(false);
           return;

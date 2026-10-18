@@ -13,7 +13,7 @@ import {
   setActiveVehicle,
   getVehicleById,
 } from '@/lib/database';
-import { peekLiveRouteTail } from '@/lib/locationService';
+import { gpsMissText, locationReadiness, peekLiveRouteTail } from '@/lib/locationService';
 import { calculateRouteDistance } from '@/lib/calculations';
 import { applyFillUpToFuelEstimate, previewFillUpFuel } from '@/lib/fuelLevel';
 import { encodeMapsTripPack, encodeMapsFuelSnap } from '@/lib/mapsTripList';
@@ -204,9 +204,10 @@ export async function runMapsTripControl(
   }
   if (action === 'resume') {
     const ok = await resumeGpsTrip(tripId, refresh);
+    const ready = ok ? 'ready' : await locationReadiness();
     return {
       ok,
-      message: ok ? 'Suivi Fuel repris.' : 'Localisation refusée — suivi non repris.',
+      message: ok ? 'Suivi Fuel repris.' : gpsMissText(ready, 'resume'),
       tripId,
     };
   }
