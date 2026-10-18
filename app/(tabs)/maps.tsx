@@ -602,7 +602,7 @@ export default function MapsScreen() {
         setSearchHits([]);
         await refresh();
         if (!r.trackingStarted) {
-          showToast('Trajet créé — autorisez la localisation pour tracer.');
+          showToast(gpsMissText(await locationReadiness(), 'trace'));
         } else {
           showToast(
             dest
@@ -942,7 +942,7 @@ export default function MapsScreen() {
             void (async () => {
               const u = (await refreshLoc()) || user;
               if (!u) {
-                showToast('Position indisponible — autorisez le GPS.');
+                showToast(gpsMissText(await locationReadiness(), 'here'));
                 return;
               }
               mapRef.current?.setCenter?.(u.latitude, u.longitude, 16);

@@ -213,7 +213,7 @@ export async function locationReadiness(): Promise<LocationReadiness> {
 
 export function gpsMissText(
   ready: LocationReadiness,
-  kind: 'station' | 'prices' | 'resume',
+  kind: 'station' | 'prices' | 'resume' | 'trace' | 'here',
 ): string {
   if (kind === 'resume') {
     if (ready === 'off') return 'Activez la localisation pour reprendre le suivi.';
@@ -222,6 +222,14 @@ export function gpsMissText(
   if (kind === 'prices') {
     if (ready === 'off') return 'Activez la localisation, ou choisissez une zone spécifique ci‑dessous.';
     return 'Position pas encore trouvée. Réessayez, ou choisissez une zone ci‑dessous.';
+  }
+  if (kind === 'trace') {
+    if (ready === 'off') return 'Activez la localisation pour tracer.';
+    return 'Trajet créé — position pas encore trouvée.';
+  }
+  if (kind === 'here') {
+    if (ready === 'off') return 'Activez la localisation pour recentrer.';
+    return 'Position pas encore trouvée.';
   }
   if (ready === 'off') return 'Activez la localisation pour trouver une station.';
   return 'Position pas encore trouvée. Réessayez : la localisation est déjà activée.';

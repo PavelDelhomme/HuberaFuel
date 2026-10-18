@@ -512,7 +512,7 @@ export async function locationReadiness(): Promise<LocationReadiness> {
 
 export function gpsMissText(
   ready: LocationReadiness,
-  kind: 'station' | 'prices' | 'resume',
+  kind: 'station' | 'prices' | 'resume' | 'trace' | 'here',
 ): string {
   if (kind === 'resume') {
     if (ready === 'denied') return 'Autorisez la localisation pour reprendre le suivi.';
@@ -523,6 +523,16 @@ export function gpsMissText(
     if (ready === 'denied') return 'Autorisez la localisation, ou choisissez une zone spécifique ci‑dessous.';
     if (ready === 'off') return 'Activez la localisation, ou choisissez une zone spécifique ci‑dessous.';
     return 'Position pas encore trouvée. Réessayez, ou choisissez une zone ci‑dessous.';
+  }
+  if (kind === 'trace') {
+    if (ready === 'denied') return 'Autorisez la localisation pour tracer.';
+    if (ready === 'off') return 'Activez la localisation pour tracer.';
+    return 'Trajet créé — position pas encore trouvée.';
+  }
+  if (kind === 'here') {
+    if (ready === 'denied') return 'Autorisez la localisation pour recentrer.';
+    if (ready === 'off') return 'Activez la localisation pour recentrer.';
+    return 'Position pas encore trouvée.';
   }
   if (ready === 'denied') return 'Autorisez la localisation pour trouver une station.';
   if (ready === 'off') return 'Activez la localisation pour trouver une station.';
@@ -569,7 +579,13 @@ export async function getCurrentLocation(opts?: {
 }): Promise<Location.LocationObject | null> {
   const { status } = await Location.requestForegroundPermissionsAsync();
   if (status !== 'granted') return null;
-  await ensureLocationEnabled();
+  let servicesOn = true;
+  try {
+    servicesOn = await Location.hasServicesEnabledAsync();
+  } catch {
+    servicesOn = true;
+  }
+  if (!servicesOn) await ensureLocationEnabled();
 
   const readLast = async (maxAge: number, accuracy: number) => {
     try {
@@ -595,7 +611,7 @@ export async function getCurrentLocation(opts?: {
         const fix = await Promise.race([
           Location.getCurrentPositionAsync({
             accuracy: Location.Accuracy.High,
-            mayShowUserSettingsDialog: true,
+            mayShowUserSettingsDialog: !servicesOn,
           }),
           new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
         ]);
@@ -612,7 +628,7 @@ export async function getCurrentLocation(opts?: {
     const fix = await Promise.race([
       Location.getCurrentPositionAsync({
         accuracy: opts?.fresh ? Location.Accuracy.High : Location.Accuracy.Balanced,
-        mayShowUserSettingsDialog: true,
+        mayShowUserSettingsDialog: !servicesOn,
       }),
       new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
     ]);
