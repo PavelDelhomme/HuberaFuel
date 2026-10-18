@@ -23,6 +23,7 @@ import { useToast } from '@/context/ToastContext';
 import TripMap from '@/components/TripMap';
 import type { TripMapRef } from '@/components/TripMap.types';
 import { getCurrentLocation, gpsMissText, locationReadiness, peekLiveRouteTail, peekLiveTripId } from '@/lib/locationService';
+import { MAP_FOLLOW_DISTANCE_M, MAP_FOLLOW_TIME_MS } from '@/lib/mapFollowGps';
 import { subscribeNativeFixes } from '@/lib/nativeLocation';
 import { fetchSpeedLimitNear, type SpeedLimitInfo } from '@/lib/roadSpeedLimits';
 import { forwardGeocode } from '@/lib/geocode';
@@ -213,9 +214,9 @@ export default function MapsScreen() {
         } else {
           nativeSub = await Location.watchPositionAsync(
             {
-              accuracy: Location.Accuracy.High,
-              timeInterval: 1200,
-              distanceInterval: 4,
+              accuracy: Location.Accuracy.Balanced,
+              timeInterval: MAP_FOLLOW_TIME_MS,
+              distanceInterval: MAP_FOLLOW_DISTANCE_M,
             },
             (pos) => {
               const next = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };

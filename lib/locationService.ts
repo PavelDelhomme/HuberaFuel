@@ -26,6 +26,7 @@ import {
   type LiveTripBuffer,
 } from '@/lib/liveTripBuffer';
 import { metaFromTrip, trackingShouldRun, type TrackingMeta } from '@/lib/trackingMeta';
+import { TRIP_GPS_DISTANCE_M, TRIP_GPS_TIME_MS } from '@/lib/mapFollowGps';
 
 interface LocationTaskData {
   locations: Location.LocationObject[];
@@ -362,8 +363,8 @@ async function ensureForegroundWatch(): Promise<void> {
     foregroundWatch = await Location.watchPositionAsync(
       {
         accuracy: Location.Accuracy.Balanced,
-        timeInterval: 5000,
-        distanceInterval: 15,
+        timeInterval: TRIP_GPS_TIME_MS,
+        distanceInterval: TRIP_GPS_DISTANCE_M,
       },
       (pos) => {
         void enqueueTripUpdate(async () => {
@@ -418,9 +419,9 @@ export async function startBackgroundTracking(opts?: {
       if (!(await hasOsLocationUpdates())) {
         await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
           accuracy: Location.Accuracy.High,
-          timeInterval: 5000,
-          distanceInterval: 16,
-          deferredUpdatesInterval: 5000,
+          timeInterval: TRIP_GPS_TIME_MS,
+          distanceInterval: TRIP_GPS_DISTANCE_M,
+          deferredUpdatesInterval: TRIP_GPS_TIME_MS,
           showsBackgroundLocationIndicator: true,
           foregroundService: {
             notificationTitle: 'Hubera Fuel — suivi en cours',
