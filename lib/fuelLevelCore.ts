@@ -80,3 +80,28 @@ export function acceptedGaugeLiters(preview: FillFuelPreview, previous: number |
   if (preview.exceedsCapacity) return previous;
   return preview.afterLiters;
 }
+
+export type UnknownGaugeChoice = {
+  liters: null;
+  /** Pas un pourcentage : distinct d’une jauge confirmée (y compris 0 % ou 100 %). */
+  percent: null;
+  knowledge: 'unknown';
+  forcedFull: false;
+};
+
+/**
+ * « Je ne sais pas » (voiture récupérée, reprise plusieurs jours après).
+ * Ne force jamais un plein : le niveau reste inconnu.
+ */
+export function unknownGaugeChoice(): UnknownGaugeChoice {
+  return { liters: null, percent: null, knowledge: 'unknown', forcedFull: false };
+}
+
+/** Une jauge confirmée à la capacité (plein). Inconnu → faux. */
+export function gaugeDisplaysConfirmedFull(
+  liters: number | null,
+  tankCapacity: number
+): boolean {
+  if (liters == null || !(tankCapacity > 0)) return false;
+  return liters >= tankCapacity - 0.05;
+}

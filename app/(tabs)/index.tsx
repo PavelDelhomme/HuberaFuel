@@ -30,6 +30,7 @@ import { getPlaces, getMaintenances, getTrips, reconcileTrackedKmFromTrips, upda
 import { syncFailureMessage } from '@/lib/api';
 import { computeBudgetOutlook } from '@/lib/budgetOutlook';
 import { fuelGaugeSaveSummary, fuelRemainingTone, fuelToneColor, setFuelLiters } from '@/lib/fuelLevel';
+import { promptUnknownGauge } from '@/lib/unknownGaugePrompt';
 import { estimateCommutesRemaining } from '@/lib/commuteRange';
 import { checkNearestStationReach } from '@/lib/nearestStationReach';
 import { estimatedRangeKm } from '@/lib/stationDetour';
@@ -215,6 +216,19 @@ export default function HomeScreen() {
         prepare: hasCoords ? '1' : '0',
       },
     } as never);
+  };
+
+  const markHomeGaugeUnknown = () => {
+    if (!activeVehicle) return;
+    const vehicleId = activeVehicle.id;
+    promptUnknownGauge((choice) => {
+      void (async () => {
+        await updateVehicle(vehicleId, { estimatedFuelLiters: choice.liters });
+        setHomeFuelDraft(choice.liters);
+        await refresh();
+        notify('Réservoir', 'Niveau inconnu — la conso des trajets reste estimée');
+      })();
+    });
   };
 
   const checkReachNearestStation = useCallback(async () => {
@@ -425,29 +439,10 @@ export default function HomeScreen() {
                     <Ionicons name="refresh" size={18} color={colors.accent} />
                   </Pressable>
                   <Pressable
-                    onPress={() => {
-                      Alert.alert(
-                        'Niveau inconnu',
-                        'À utiliser si la voiture n’est plus la même ou si vous ne connaissez pas le niveau. Aucun plein n’est enregistré. La jauge arrête d’estimer les litres restants jusqu’au prochain réglage.',
-                        [
-                          { text: 'Annuler', style: 'cancel' },
-                          {
-                            text: 'Je ne sais pas',
-                            onPress: () => {
-                              void (async () => {
-                                await updateVehicle(activeVehicle.id, { estimatedFuelLiters: null });
-                                setHomeFuelDraft(null);
-                                await refresh();
-                                notify('Réservoir', 'Niveau marqué inconnu');
-                              })();
-                            },
-                          },
-                        ]
-                      );
-                    }}
+                    onPress={markHomeGaugeUnknown}
                     hitSlop={10}
                     style={[styles.iconBtn, { borderColor: colors.border }]}
-                    accessibilityLabel="Indiquer que le niveau de carburant est inconnu"
+                    accessibilityLabel="Je ne sais pas, niveau de jauge inconnu"
                   >
                     <Ionicons name="help-circle-outline" size={18} color={colors.accent} />
                   </Pressable>
@@ -465,6 +460,7 @@ export default function HomeScreen() {
                   liters={homeFuelDraft}
                   accentColor={fuelColor}
                   vehicle={activeVehicle}
+                  onUnknown={markHomeGaugeUnknown}
                   onChange={setHomeFuelDraft}
                   onChangeEnd={async (L) => {
                     setHomeFuelDraft(L);
@@ -484,7 +480,21 @@ export default function HomeScreen() {
                 {(() => {
                   // Uniquement la jauge véhicule — pas sinceFill (0 par défaut sans plein → « ~0.0 L » fantôme).
                   const rem = homeFuelDraft ?? activeVehicle.estimatedFuelLiters ?? null;
-                  if (rem == null) return null;
+                  if (rem == null) {
+                    return (
+                      <Text
+                        style={{
+                          color: colors.textSecondary,
+                          fontWeight: '800',
+                          fontSize: 15,
+                          textAlign: 'center',
+                          marginTop: 6,
+                        }}
+                      >
+                        Inconnue
+                      </Text>
+                    );
+                  }
                   const rangeKm = rem > 0 ? estimatedRangeKm(activeVehicle, rem) : 0;
                   return (
                     <Text

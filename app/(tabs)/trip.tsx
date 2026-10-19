@@ -89,6 +89,7 @@ import {
   SIM_WORK,
 } from '@/lib/gpsCarSimulator';
 import { applyTripFuelBurn, fuelGaugeSaveSummary, fuelRemainingTone, fuelToneColor, setFuelLiters } from '@/lib/fuelLevel';
+import { promptUnknownGauge } from '@/lib/unknownGaugePrompt';
 import { estimateCommutesRemaining } from '@/lib/commuteRange';
 import { recordFuelGaugeReading } from '@/lib/fuelGaugeHistory';
 import { checkNearestStationReach } from '@/lib/nearestStationReach';
@@ -3728,15 +3729,13 @@ export default function TripScreen() {
                   </Text>
                   {(() => {
                     const tank = activeVehicle?.tankCapacity || 50;
-                    const rem =
-                      activeVehicle?.estimatedFuelLiters != null
-                        ? activeVehicle.estimatedFuelLiters
-                        : sinceFill.fuelRemainingEst;
+                    const gaugeKnown = activeVehicle?.estimatedFuelLiters != null;
+                    const rem = gaugeKnown ? activeVehicle.estimatedFuelLiters : null;
                     const tone = fuelRemainingTone({
                       litersRemaining: rem,
                       tankCapacity: tank,
                       lowLitersThreshold: activeVehicle?.lowFuelThresholdLiters,
-                      rangeKm: sinceFill.rangeKm,
+                      rangeKm: gaugeKnown ? sinceFill.rangeKm : undefined,
                       vehicle: activeVehicle,
                     });
                     const toneColor = fuelToneColor(tone, colors);
@@ -3748,7 +3747,24 @@ export default function TripScreen() {
                           tankCapacity={tank}
                           liters={rem}
                           accentColor={toneColor}
+                          vehicle={activeVehicle}
                           onChange={() => undefined}
+                          onUnknown={() => {
+                            if (!activeVehicle) return;
+                            const vehicleId = activeVehicle.id;
+                            promptUnknownGauge((choice) => {
+                              void (async () => {
+                                await updateVehicle(vehicleId, {
+                                  estimatedFuelLiters: choice.liters,
+                                });
+                                await refresh();
+                                notify(
+                                  'Réservoir',
+                                  'Niveau inconnu — la conso des trajets reste estimée'
+                                );
+                              })();
+                            });
+                          }}
                           onChangeEnd={async (L) => {
                             if (!activeVehicle) return;
                             const adj = await setFuelLiters(activeVehicle, L);
@@ -3767,6 +3783,9 @@ export default function TripScreen() {
                                     trips: history,
                                   })
                                 : null;
+                            if (!gaugeKnown) {
+                              return 'Niveau inconnu — la conso des trajets reste estimée';
+                            }
                             if ((tone === 'critical' || tone === 'warn') && commute) {
                               return commute.label;
                             }

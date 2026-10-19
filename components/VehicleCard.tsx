@@ -7,6 +7,8 @@ import { FUEL_TYPE_LABELS } from '@/constants/Colors';
 import type { Vehicle } from '@/types';
 import { displayOdometerKm, formatConsumption } from '@/lib/calculations';
 import { fuelRemainingTone, fuelToneColor, setFuelLiters } from '@/lib/fuelLevel';
+import { promptUnknownGauge } from '@/lib/unknownGaugePrompt';
+import { updateVehicle } from '@/lib/database';
 import { FuelGaugeSlider } from '@/components/FuelGaugeSlider';
 import { notify } from '@/lib/notify';
 import { vehicleIdentity } from '@/lib/vehicleIdentity';
@@ -143,6 +145,16 @@ export function VehicleCard({
           vehicle={vehicle}
           onChange={setDraftLiters}
           onChangeEnd={(L) => void commitFuel(L)}
+          onUnknown={() => {
+            promptUnknownGauge((choice) => {
+              void (async () => {
+                await updateVehicle(vehicle.id, { estimatedFuelLiters: choice.liters });
+                setDraftLiters(choice.liters);
+                notify('Réservoir', `${vehicle.name} · niveau inconnu`);
+                onFuelUpdated?.();
+              })();
+            });
+          }}
         />
         {draftLiters != null && vehicle.consumptionPer100 > 0 && (
           <Text

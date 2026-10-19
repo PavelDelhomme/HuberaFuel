@@ -112,8 +112,13 @@ jobs:
           VERSION_CODE: ${{ steps.ver.outputs.versionCode }}
         run: |
           pip install -q pyaxmlparser
+          PKG=$(node -p "require('./app.json').expo.android.package")
+          NAME=$(node -p "require('./app.json').expo.name")
           python3 scripts/verify-release-apk.py /tmp/gasoil.apk \
+            --package "$PKG" \
             --package com.gasoiltracking.app \
+            --host fuel.hubera.cloud \
+            --app-name "$NAME" \
             --version-code "$VERSION_CODE" \
             --version-name "$VERSION"
 
@@ -130,10 +135,12 @@ jobs:
             const cmp=(a,b)=>{const pa=String(a||'0').split('.').map(x=>parseInt(x,10)||0);const pb=String(b||'0').split('.').map(x=>parseInt(x,10)||0);for(let i=0;i<Math.max(pa.length,pb.length);i++){const d=(pa[i]||0)-(pb[i]||0);if(d) return d;}return 0;};
             if (live && cmp(v, live) < 0) { console.log('Skip upload: '+v+' < live '+live); process.exit(42); }
           " "$LIVE" "$VERSION" || { echo "Skip older build"; exit 0; }
+          PKG=$(node -p "require('./app.json').expo.android.package")
           HTTP=$(curl -sS -o /tmp/rel.json -w "%{http_code}" -X POST "https://gasoil-tracking.delhomme.ovh/api/ci/releases" \
             -H "X-Release-Token: $TOKEN" \
             -F "version=$VERSION" \
             -F "versionCode=$VERSION_CODE" \
+            -F "packageName=$PKG" \
             -F "forceUpdate=1" \
             -F "releaseNotes=v$VERSION — suivi live Maps (HUD vitesse/limite/km) · historique par date/plage · OTA force." \
             -F "apk=@/tmp/gasoil.apk")

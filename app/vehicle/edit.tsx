@@ -25,6 +25,7 @@ import {
   searchVehiclesLive,
 } from '@/lib/vehicleCatalogStore';
 import { fuelGaugeSaveSummary, setFuelLiters } from '@/lib/fuelLevel';
+import { promptUnknownGauge } from '@/lib/unknownGaugePrompt';
 import { FuelGaugeSlider } from '@/components/FuelGaugeSlider';
 import { refreshVehicleReminders } from '@/lib/reminders';
 import type { FuelType, Vehicle, VehicleSegment } from '@/types';
@@ -517,13 +518,29 @@ export default function EditVehicleScreen() {
               await refresh();
               notify('Niveau', fuelGaugeSaveSummary(adj));
             }}
+            onUnknown={() => {
+              const id = vehicle.id;
+              promptUnknownGauge((choice) => {
+                void (async () => {
+                  await updateVehicle(id, { estimatedFuelLiters: choice.liters });
+                  setVehicle({ ...vehicle, estimatedFuelLiters: choice.liters });
+                  await refresh();
+                  notify('Niveau', 'Niveau inconnu — la conso des trajets reste estimée');
+                })();
+              });
+            }}
           />
           <Pressable
-            onPress={async () => {
-              await updateVehicle(vehicle.id, { estimatedFuelLiters: null });
-              setVehicle({ ...vehicle, estimatedFuelLiters: null });
-              await refresh();
-              notify('Niveau', 'Marqué inconnu');
+            onPress={() => {
+              const id = vehicle.id;
+              promptUnknownGauge((choice) => {
+                void (async () => {
+                  await updateVehicle(id, { estimatedFuelLiters: choice.liters });
+                  setVehicle({ ...vehicle, estimatedFuelLiters: choice.liters });
+                  await refresh();
+                  notify('Niveau', 'Niveau inconnu — la conso des trajets reste estimée');
+                })();
+              });
             }}
             style={{ marginTop: 10 }}
           >

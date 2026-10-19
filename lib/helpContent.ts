@@ -64,7 +64,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         id: 'gauge',
         title: 'Jauge de carburant',
         body:
-          'La jauge est une estimation : elle baisse avec les trajets et remonte aux pleins. Au départ d’un trajet, vous pouvez l’ajuster. Valider la jauge compare la conso observée au modèle de cette voiture (facteur + L/100) et synchronise le cloud si vous êtes connecté. Chaque véhicule garde un historique des jauges (départ/arrivée, pleins, saisies).',
+          'La jauge est une estimation : elle baisse avec les trajets et remonte aux pleins. Le ? à côté de Recharger et au col de la jauge sert quand vous récupérez la voiture : « Je ne sais pas » laisse le niveau inconnu, sans forcer un plein. La conso des trajets continue d’être estimée, et cet état reste distinct d’une jauge confirmée. Valider la jauge compare la conso observée au modèle de cette voiture (facteur + L/100) et synchronise le cloud si vous êtes connecté. Chaque véhicule garde un historique des jauges (départ/arrivée, pleins, saisies).',
         link: { label: 'Accueil', href: '/(tabs)' },
       },
       {

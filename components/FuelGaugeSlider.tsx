@@ -46,6 +46,8 @@ type Props = {
   vehicle?: { name?: string; model?: string; brand?: string } | null;
   /** Change avec le véhicule : la jauge affichée reprend tout de suite ce réservoir. */
   resetKey?: string | number | null;
+  /** « Je ne sais pas » — niveau inconnu, sans plein forcé. */
+  onUnknown?: () => void;
 };
 
 export function FuelGaugeSlider({
@@ -59,6 +61,7 @@ export function FuelGaugeSlider({
   requireConfirm = true,
   vehicle,
   resetKey,
+  onUnknown,
 }: Props) {
   const { colors } = useTheme();
   const capacity = Math.max(1, tankCapacity || 50);
@@ -226,6 +229,7 @@ export function FuelGaugeSlider({
 
   const mark = gaugeMarkLabel(fraction);
   const pct = Math.round(fraction * 100);
+  const unknownIdle = !known && !editing;
   const needleTip = gaugePolar(cx, cy, r - stroke * 0.15, fraction);
   const trackPath = gaugeArcPath(cx, cy, r, 0, 1);
   const dangerPath = gaugeArcPath(cx, cy, r, 0, 0.12);
@@ -275,6 +279,21 @@ export function FuelGaugeSlider({
           onLayout={onLayout}
           {...(interactive ? pan.panHandlers : {})}
         >
+          {onUnknown && !mini ? (
+            <Pressable
+              onPress={onUnknown}
+              hitSlop={8}
+              style={styles.unknownBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Je ne sais pas, niveau de jauge inconnu"
+            >
+              <Ionicons
+                name={unknownIdle ? 'help-circle' : 'help-circle-outline'}
+                size={compact ? 20 : 22}
+                color={colors.accent}
+              />
+            </Pressable>
+          ) : null}
           <Svg width={size} height={svgH}>
             <Path
               d={trackPath}
@@ -336,16 +355,18 @@ export function FuelGaugeSlider({
               );
             })}
 
-            <Line
-              x1={cx}
-              y1={cy}
-              x2={needleTip.x}
-              y2={needleTip.y}
-              stroke={fillColor}
-              strokeWidth={mini ? 2 : compact ? 3 : 4}
-              strokeLinecap="round"
-            />
-            <Circle cx={cx} cy={cy} r={mini ? 5 : compact ? 7 : 9} fill={fillColor} />
+            {unknownIdle ? null : (
+              <Line
+                x1={cx}
+                y1={cy}
+                x2={needleTip.x}
+                y2={needleTip.y}
+                stroke={fillColor}
+                strokeWidth={mini ? 2 : compact ? 3 : 4}
+                strokeLinecap="round"
+              />
+            )}
+            <Circle cx={cx} cy={cy} r={mini ? 5 : compact ? 7 : 9} fill={unknownIdle ? colors.textSecondary : fillColor} />
             <Circle cx={cx} cy={cy} r={mini ? 2 : compact ? 3 : 4} fill="#fff" />
 
             {/* Chiffre centré (évite « 100% » trop à gauche qui masque E / ¼) */}
@@ -353,23 +374,23 @@ export function FuelGaugeSlider({
               <SvgText
                 x={cx}
                 y={cy - 4}
-                fill={tone === 'critical' || tone === 'warn' ? fillColor : colors.text}
-                fontSize={13}
+                fill={unknownIdle ? colors.textSecondary : tone === 'critical' || tone === 'warn' ? fillColor : colors.text}
+                fontSize={unknownIdle ? 11 : 13}
                 fontWeight="900"
                 textAnchor="middle"
               >
-                {known || editing ? `${pct}%` : '—'}
+                {known || editing ? `${pct}%` : '?'}
               </SvgText>
             ) : (
               <SvgText
                 x={cx}
                 y={cy - (compact ? 16 : 20)}
-                fill={tone === 'critical' || tone === 'warn' ? fillColor : colors.text}
-                fontSize={compact ? 24 : 32}
+                fill={unknownIdle ? colors.textSecondary : tone === 'critical' || tone === 'warn' ? fillColor : colors.text}
+                fontSize={unknownIdle ? (compact ? 16 : 18) : compact ? 24 : 32}
                 fontWeight="900"
                 textAnchor="middle"
               >
-                {known || editing ? `${pct}%` : '—'}
+                {known || editing ? `${pct}%` : 'Inconnue'}
               </SvgText>
             )}
           </Svg>
@@ -381,11 +402,11 @@ export function FuelGaugeSlider({
               ? 'Tournez l’aiguille ou choisissez E / ¼ / ½ / ¾ / F'
               : known || editing
                 ? `${displayL.toFixed(1)} L / ${capacity.toFixed(0)} L · ${mark}`
-                : 'Régler le niveau'}
+                : 'Inconnue · la conso des trajets reste estimée'}
           </Text>
         ) : (
           <Text style={[styles.litersLine, { color: colors.textSecondary, fontSize: 11 }]}>
-            {known ? `${displayL.toFixed(0)} L` : '—'}
+            {known ? `${displayL.toFixed(0)} L` : 'Inconnue'}
           </Text>
         )}
 
@@ -510,6 +531,18 @@ const styles = StyleSheet.create({
   },
   dial: {
     alignSelf: 'center',
+    position: 'relative',
+  },
+  unknownBtn: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    zIndex: 3,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   litersLine: {
     fontSize: 13,
