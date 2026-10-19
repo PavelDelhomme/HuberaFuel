@@ -9,6 +9,7 @@ import { displayOdometerKm, formatConsumption } from '@/lib/calculations';
 import { fuelRemainingTone, fuelToneColor, setFuelLiters } from '@/lib/fuelLevel';
 import { FuelGaugeSlider } from '@/components/FuelGaugeSlider';
 import { notify } from '@/lib/notify';
+import { vehicleIdentity } from '@/lib/vehicleIdentity';
 
 interface VehicleCardProps {
   vehicle: Vehicle;
@@ -84,7 +85,7 @@ export function VehicleCard({
         <View style={styles.info}>
           <Text style={[styles.name, { color: colors.text }]}>{vehicle.name}</Text>
           <Text style={[styles.details, { color: colors.textSecondary }]}>
-            {vehicle.brand} {vehicle.model} ({vehicle.year})
+            {vehicle.brand} {vehicle.model} · {vehicleIdentity(vehicle)}
           </Text>
         </View>
         <View style={styles.headerRight}>
@@ -133,7 +134,9 @@ export function VehicleCard({
         onMoveShouldSetResponder={() => true}
       >
         <FuelGaugeSlider
+          key={vehicle.id}
           requireConfirm
+          resetKey={vehicle.id}
           tankCapacity={vehicle.tankCapacity}
           liters={draftLiters}
           accentColor={fuelColor}

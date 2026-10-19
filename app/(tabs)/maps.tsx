@@ -166,8 +166,11 @@ export default function MapsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      didCenterOnUser.current = false;
+      const liveTracking = Boolean(activeTripRef.current?.isActive);
+      if (!liveTracking) didCenterOnUser.current = false;
       void (async () => {
+        // Suivi en cours : pas de fix GPS frais (jusqu’à 8 s) qui fige Terminer.
+        if (liveTracking) return;
         const u = await refreshLoc();
         if (u && !pendingDest && !(activeTripRef.current?.isActive)) {
           didCenterOnUser.current = true;
@@ -211,7 +214,7 @@ export default function MapsScreen() {
             () => {},
             { enableHighAccuracy: true, maximumAge: 4000 }
           );
-        } else {
+        } else if (!activeTripRef.current?.isActive) {
           nativeSub = await Location.watchPositionAsync(
             {
               accuracy: Location.Accuracy.Balanced,
@@ -283,12 +286,10 @@ export default function MapsScreen() {
           }
         }
         if (!activeTrip) return;
-        const full = await getTripById(activeTrip.id);
-        if (cancelled || !full) return;
-        const pts = parseRoutePoints(full.routePoints || '[]');
-        const tail = pts.length > 120 ? pts.slice(-120) : pts;
-        setLiveTail(tail);
-        const last = tail[tail.length - 1];
+        const tailOnly = peekLiveRouteTail(120);
+        if (cancelled || !tailOnly?.length) return;
+        setLiveTail(tailOnly);
+        const last = tailOnly[tailOnly.length - 1];
         if (last) setUser({ latitude: last.latitude, longitude: last.longitude });
       } catch {
         /* ignore */

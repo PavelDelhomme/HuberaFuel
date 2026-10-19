@@ -55,8 +55,28 @@ export function resolveActiveVehicleId(opts: {
     .filter((id) => known.has(id));
   const uniqueDb = dbActive.length === 1 ? dbActive[0] : null;
 
-  if (uniqueDb != null && stored != null && stored !== uniqueDb) return uniqueDb;
-  if (stored != null) return stored;
   if (uniqueDb != null) return uniqueDb;
+  const lastTrip = latestTripVehicleId(opts.lastTripAtByVehicle, known);
+  if (lastTrip != null) return lastTrip;
+  if (stored != null) return stored;
   return null;
+}
+
+function latestTripVehicleId(
+  map: Readonly<Record<number, number>> | undefined,
+  known: Set<number>
+): number | null {
+  if (!map) return null;
+  let bestId: number | null = null;
+  let bestAt = -1;
+  for (const [key, at] of Object.entries(map)) {
+    const id = Number(key);
+    const ms = Number(at);
+    if (!known.has(id) || !Number.isFinite(ms)) continue;
+    if (ms >= bestAt) {
+      bestAt = ms;
+      bestId = id;
+    }
+  }
+  return bestId;
 }

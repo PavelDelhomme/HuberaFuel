@@ -25,6 +25,8 @@ type Props = {
   /** Si fournis, pas de SQL jauge supplémentaire. */
   startLiters?: number;
   endLiters?: number;
+  /** Même libellé que la liste des véhicules (année, carburant, n°). */
+  vehicleHint?: string;
 };
 
 let placesCache: { at: number; places: Place[] } | null = null;
@@ -51,6 +53,7 @@ function TripHistoryCardInner({
   allTrips = [],
   startLiters,
   endLiters,
+  vehicleHint,
 }: Props) {
   const { colors } = useTheme();
   const stored = useMemo(() => parseRoutePoints(trip.routePoints), [trip.routePoints]);
@@ -194,6 +197,11 @@ function TripHistoryCardInner({
           </View>
         )}
 
+        {vehicleHint ? (
+          <Text style={{ color: colors.textSecondary, fontSize: 12, fontWeight: '700', marginBottom: 6 }}>
+            {vehicleHint}
+          </Text>
+        ) : null}
         <View style={styles.ends}>
           <View style={styles.endCol}>
             <Text style={[styles.endLabel, { color: colors.success }]}>Départ</Text>

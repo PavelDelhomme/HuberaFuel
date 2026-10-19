@@ -14,7 +14,7 @@ import {
   getVehicleById,
   updateTrip,
 } from '@/lib/database';
-import { clearLiveTripBuffer, seedLiveTripBuffer } from '@/lib/liveTripBuffer';
+import { clearLiveTripBuffer, readLiveTripBuffer, seedLiveTripBuffer } from '@/lib/liveTripBuffer';
 import {
   calculateRouteDistance,
   estimateCost,
@@ -308,22 +308,22 @@ export async function stopGpsTripLite(opts: {
     /* ignore */
   }
   try {
-    await stopBackgroundTracking();
+    // Pas de relecture du tracé complet : Terminer doit répondre tout de suite.
+    await stopBackgroundTracking({ skipPersist: true });
   } catch {
     /* déjà arrêté */
   }
-  try {
-    await persistLiveRoute(opts.tripId);
-  } catch {
-    /* ignore */
-  }
 
-  const trip = await getTripById(opts.tripId);
-  const routeJson = trip?.routePoints || '[]';
-  const pts = parseRoutePoints(routeJson);
-  const fromPts =
-    pts.length >= 2 ? Math.round(calculateRouteDistance(routeJson) * 1000) / 1000 : 0;
-  const distanceKm = Math.max(Number(opts.distanceKm) || 0, fromPts);
+  const lite = await getActiveTripLite().catch(() => null);
+  const buf = await readLiveTripBuffer().catch(() => null);
+  const trip = lite?.id === opts.tripId ? lite : null;
+  const fromStore = Math.max(
+    lite?.id === opts.tripId ? Number(lite.distanceKm) || 0 : 0,
+    buf?.tripId === opts.tripId ? Number(buf.distanceKm) || 0 : 0,
+    Number(trip?.distanceKm) || 0
+  );
+  const distanceKm = Math.max(Number(opts.distanceKm) || 0, fromStore);
+  const pts: ReturnType<typeof parseRoutePoints> = [];
 
   let estimatedFuelUsed = 0;
   let estimatedCostVal = 0;
@@ -352,42 +352,9 @@ export async function stopGpsTripLite(opts: {
     }
   }
 
-  // Libellés : places enregistrées > reverse geocode (timeout court = offline OK)
-  let originName = trip?.originName || null;
-  let destinationName = trip?.destinationName || null;
-  let noteExtra: string | null = null;
-  try {
-    const places = await getPlaces().catch(() => []);
-    const startPt = pts[0] || null;
-    const endPt = pts.length > 1 ? pts[pts.length - 1] : startPt;
-    let origin = await resolveTripEndpointLabel({
-      places,
-      coords: startPt,
-      existingName: originName,
-      role: 'origin',
-      geocodeTimeoutMs: 2500,
-    });
-    let destination = await resolveTripEndpointLabel({
-      places,
-      coords: endPt,
-      existingName: destinationName,
-      role: 'destination',
-      geocodeTimeoutMs: 2500,
-    });
-    ({ origin, destination } = disambiguateSameEndpoints(origin, destination, distanceKm));
-    originName = origin.displayName;
-    destinationName = destination.displayName;
-    const details = [origin.detailAddress, destination.detailAddress]
-      .filter(Boolean)
-      .filter((a, i, arr) => arr.indexOf(a) === i);
-    if (details.length) {
-      noteExtra = `Adresses : ${details.join(' → ')}`;
-    }
-  } catch {
-    /* ignore naming */
-  }
-
-  const mergedNote = [trip?.note, noteExtra].filter(Boolean).join('\n') || undefined;
+  const originName = trip?.originName || null;
+  const destinationName = trip?.destinationName || null;
+  const mergedNote = trip?.note || undefined;
 
   await updateTrip(opts.tripId, {
     isActive: false,
@@ -404,9 +371,14 @@ export async function stopGpsTripLite(opts: {
   if (!tiny && distanceKm > 0) {
     await addTrackedKm(opts.vehicleId, distanceKm).catch(() => undefined);
   }
-  await clearLiveTripBuffer();
-  clearLivePointsAfterFinish();
   await opts.refresh?.();
+  // Tracé complet après la clôture : même id, pas un second trajet.
+  void persistLiveRoute(opts.tripId)
+    .catch(() => undefined)
+    .finally(() => {
+      void clearLiveTripBuffer();
+      clearLivePointsAfterFinish();
+    });
 }
 
 /** Tests / reset interne. */

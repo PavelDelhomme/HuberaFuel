@@ -12,6 +12,7 @@ import {
   getBudgets,
   setActiveVehicle,
   getVehicleById,
+  updateVehicle,
 } from '@/lib/database';
 import { gpsMissText, locationReadiness, peekLiveRouteTail } from '@/lib/locationService';
 import { calculateRouteDistance } from '@/lib/calculations';
@@ -61,11 +62,23 @@ async function packSnap(): Promise<string> {
     ...v,
     isActive: activeId > 0 ? v.id === activeId : false,
   }));
+  const trips = await getTrips(undefined, { omitRoutePoints: true });
+  let lastTripVehicleId = 0;
+  let lastAt = '';
+  for (const t of trips) {
+    if (!t.vehicleId || t.status === 'rejected') continue;
+    const at = String(t.startTime || '');
+    if (at >= lastAt) {
+      lastAt = at;
+      lastTripVehicleId = t.vehicleId;
+    }
+  }
   return encodeMapsFuelSnap({
     vehicles: marked,
     fills,
     budget: budgets[0] || null,
     lastVehicleId: activeId || undefined,
+    lastTripVehicleId: lastTripVehicleId || undefined,
   });
 }
 
@@ -126,8 +139,13 @@ export async function runMapsTripControl(
         trackingStarted: true,
       };
     }
+    const gaugeLiters = num(input.liters);
+    if (input.liters != null && String(input.liters) !== '' && gaugeLiters >= 0) {
+      const capped = Math.min(vehicle.tankCapacity, Math.max(0, Math.round(gaugeLiters * 10) / 10));
+      await updateVehicle(vehicle.id, { estimatedFuelLiters: capped });
+    }
     const started = await startGpsTrip({
-      vehicle,
+      vehicle: (await getVehicleById(vehicle.id)) || vehicle,
       refresh,
       destinationName: input.dest?.trim() || undefined,
       skipGauge: true,

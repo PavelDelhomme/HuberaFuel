@@ -44,6 +44,8 @@ type Props = {
   requireConfirm?: boolean;
   /** Véhicule (806 = seuil critique au quart). */
   vehicle?: { name?: string; model?: string; brand?: string } | null;
+  /** Change avec le véhicule : la jauge affichée reprend tout de suite ce réservoir. */
+  resetKey?: string | number | null;
 };
 
 export function FuelGaugeSlider({
@@ -56,6 +58,7 @@ export function FuelGaugeSlider({
   mini,
   requireConfirm = true,
   vehicle,
+  resetKey,
 }: Props) {
   const { colors } = useTheme();
   const capacity = Math.max(1, tankCapacity || 50);
@@ -108,6 +111,17 @@ export function FuelGaugeSlider({
       baselineRef.current = savedL;
     }
   }, [savedL, editing]);
+
+  useEffect(() => {
+    setDraft(savedL);
+    baselineRef.current = savedL;
+    liveRef.current = savedL;
+    setEditing(!requireConfirm);
+    setNeedsGesture(false);
+    setGestured(false);
+    // Nouveau véhicule : ne pas garder l’aiguille du précédent.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetKey]);
 
   const setLive = useCallback(
     (next: number) => {

@@ -2,7 +2,6 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import type { BudgetStatus, Trip, Vehicle } from '@/types';
 import {
   getActiveVehicle,
-  getActiveTrip,
   getActiveTripLite,
   getTripById,
   getVehicleById,
@@ -16,7 +15,7 @@ import { recoverDataAfterUpdateIfNeeded, getUpdatePending, refreshFromCloud } fr
 import { getToken } from '@/lib/api';
 import { hasLocalUserData } from '@/lib/dataSnapshot';
 import { confirm, notify } from '@/lib/notify';
-import { flushTripUpdates, stopBackgroundTracking } from '@/lib/locationService';
+import { flushTripUpdates, isBackgroundTrackingLive, stopBackgroundTracking } from '@/lib/locationService';
 import { readLiveTripBuffer } from '@/lib/liveTripBuffer';
 import { reverseGeocode } from '@/lib/geocode';
 import { applyTripFuelBurn } from '@/lib/fuelLevel';
@@ -56,12 +55,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       if (!staleTripChecked.current) {
         try {
-          const closed = await finalizeStaleActiveTrip();
+          const trackingLive = await isBackgroundTrackingLive().catch(() => false);
+          const closed = await finalizeStaleActiveTrip({ trackingLive });
           if (closed) {
             await stopBackgroundTracking().catch(() => undefined);
-          } else {
-            // FGS orphelin possible (trajet déjà inactif)
-            const live = await getActiveTrip();
+          } else if (!trackingLive) {
+            const live = await getActiveTripLite();
             if (!live?.isActive) {
               await stopBackgroundTracking().catch(() => undefined);
             }

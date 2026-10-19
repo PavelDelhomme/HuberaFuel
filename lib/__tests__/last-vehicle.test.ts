@@ -50,6 +50,14 @@ describe('dernier véhicule Fuel / Maps', () => {
         vehicleIds: ids,
       })
     ).toBe(4);
+    expect(
+      resolveActiveVehicleId({
+        storedId: 2,
+        dbActiveIds: [],
+        vehicleIds: ids,
+        lastTripAtByVehicle: { 4: Date.parse('2026-10-19T08:00:00Z'), 2: Date.parse('2026-10-18T08:00:00Z') },
+      })
+    ).toBe(4);
   });
 
   it('lit la clé Maps hubera-maps-fuel-veh si Fuel n’a pas encore d’id', () => {

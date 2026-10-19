@@ -40,20 +40,57 @@ export function parseYmdParam(raw: unknown): string | null {
   return s;
 }
 
-export function tripStartedOnYmd(startTime: string, ymd: string): boolean {
-  try {
-    return toLocalYmd(new Date(startTime)) === ymd;
-  } catch {
-    return String(startTime || '').slice(0, 10) === ymd;
+function hasZone(raw: string): boolean {
+  return /[zZ]$|[+-]\d{2}:?\d{2}$/.test(raw);
+}
+
+/** Instant d’un horodatage trajet ou plein, y compris `AAAA-MM-JJ HH:MM:SS` sans fuseau. */
+export function tripInstantMs(raw: string): number {
+  const s = String(raw || '').trim();
+  if (!s) return NaN;
+  if (hasZone(s)) {
+    const d = new Date(s);
+    return d.getTime();
   }
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?/.exec(s);
+  if (!m) {
+    const d = new Date(s);
+    return d.getTime();
+  }
+  return new Date(
+    Number(m[1]),
+    Number(m[2]) - 1,
+    Number(m[3]),
+    Number(m[4] || 0),
+    Number(m[5] || 0),
+    Number(m[6] || 0)
+  ).getTime();
+}
+
+export function tripStartedOnYmd(startTime: string, ymd: string): boolean {
+  return tripYmd(startTime) === ymd;
 }
 
 export function tripYmd(startTime: string): string {
-  try {
-    return toLocalYmd(new Date(startTime));
-  } catch {
-    return String(startTime || '').slice(0, 10);
+  const s = String(startTime || '').trim();
+  if (!s) return '';
+  if (hasZone(s)) {
+    const d = new Date(s);
+    if (!Number.isNaN(d.getTime())) return toLocalYmd(d);
   }
+  const day = /^(\d{4}-\d{2}-\d{2})/.exec(s);
+  if (day) return day[1];
+  const d = new Date(s);
+  if (!Number.isNaN(d.getTime())) return toLocalYmd(d);
+  return '';
+}
+
+/** Trajet compté depuis un plein, même si les chaînes n’ont pas le même format. */
+export function tripAtOrAfter(startTime: string, fillDate: string): boolean {
+  const a = tripInstantMs(startTime);
+  const b = tripInstantMs(fillDate);
+  if (Number.isFinite(a) && Number.isFinite(b)) return a + 500 >= b;
+  return String(startTime || '') >= String(fillDate || '');
 }
 
 export function tripIsToday(startTime: string, now = new Date()): boolean {
@@ -100,7 +137,7 @@ export function filterTripsByHistory<T extends { startTime: string }>(
     return trips.filter((t) => tripStartedOnYmd(t.startTime, ymd));
   }
   if (filter === 'sinceFill' && fillDate) {
-    return trips.filter((t) => t.startTime >= fillDate);
+    return trips.filter((t) => tripAtOrAfter(t.startTime, fillDate));
   }
   if ((filter === 'date' || filter === 'range') && from) {
     const end = to || from;

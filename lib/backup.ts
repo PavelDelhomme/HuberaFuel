@@ -38,13 +38,14 @@ async function resolveActiveTripForSync(opts?: {
   const ageMs = Number.isFinite(startMs) ? Date.now() - startMs : 0;
   const tiny = (live.distanceKm || 0) < 0.5;
   const staleTiny = tiny && ageMs > 45 * 60 * 1000;
-  const oldGhost = ageMs > 90 * 60 * 1000;
 
-  if (trackingLive && tiny && !oldGhost) {
+  // Un suivi encore vivant, ou un trajet qui a déjà des km, n’est jamais
+  // fermé par la synchro : le bouton Terminer doit rester utilisable.
+  if (trackingLive || !tiny) {
     return true;
   }
 
-  if (!opts?.neverKillRecent && (staleTiny || oldGhost)) {
+  if (!opts?.neverKillRecent && staleTiny) {
     await stopActiveTrips();
     try {
       await stopBackgroundTracking();

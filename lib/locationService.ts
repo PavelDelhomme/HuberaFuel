@@ -454,7 +454,10 @@ export async function startBackgroundTracking(opts?: {
   return startInFlight;
 }
 
-export async function stopBackgroundTracking(): Promise<void> {
+export async function stopBackgroundTracking(opts?: {
+  /** Arrêt immédiat : ne pas relire tout le tracé avant de rendre la main. */
+  skipPersist?: boolean;
+}): Promise<void> {
   await stopForegroundWatch();
   // Toujours tenter l’arrêt OS : hasStartedLocationUpdatesAsync peut mentir
   // (notif FGS encore là alors que l’API dit « pas démarré »).
@@ -480,14 +483,15 @@ export async function stopBackgroundTracking(): Promise<void> {
   } catch {
     /* module absent / web */
   }
-  try {
-    await persistLiveRoute();
-  } catch (e) {
-    console.warn('[gps-bg] persist on stop failed', e);
-  } finally {
-    // Ne pas vider le cache ici : finishTripCore relit encore peek/persist.
-    // Le cache est vidé après flush explicite (clearLivePointsAfterFinish).
+  if (!opts?.skipPersist) {
+    try {
+      await persistLiveRoute();
+    } catch (e) {
+      console.warn('[gps-bg] persist on stop failed', e);
+    }
   }
+  // Ne pas vider le cache ici : finishTripCore relit encore peek/persist.
+  // Le cache est vidé après flush explicite (clearLivePointsAfterFinish).
 }
 
 export function clearLivePointsAfterFinish(): void {

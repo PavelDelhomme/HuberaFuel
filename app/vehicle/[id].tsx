@@ -36,6 +36,7 @@ import { TutorialAnchor } from '@/components/TutorialAnchor';
 import { syncFailureMessage } from '@/lib/api';
 import { useToast } from '@/context/ToastContext';
 import type { FillUp, SinceLastFillStats, Trip } from '@/types';
+import { vehicleIdentity } from '@/lib/vehicleIdentity';
 
 export default function VehicleDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -142,7 +143,7 @@ export default function VehicleDetailScreen() {
           <View style={{ flex: 1 }}>
             <Text style={[styles.name, { color: colors.text }]}>{vehicle.name}</Text>
             <Text style={{ color: colors.textSecondary, fontSize: 13 }}>
-              {vehicle.brand} {vehicle.model} · {vehicle.year} · {FUEL_TYPE_LABELS[vehicle.fuelType]}
+              {vehicle.brand} {vehicle.model} · {vehicleIdentity(vehicle)}
             </Text>
             {isActive && (
               <Text style={{ color: colors.accent, fontWeight: '700', marginTop: 4, fontSize: 12 }}>
@@ -177,7 +178,9 @@ export default function VehicleDetailScreen() {
           Marques 0 · 1/4 · 1/2 · 3/4 · 1 — comme sur le tableau de bord.
         </Text>
         <FuelGaugeSlider
+          key={vehicle.id}
           requireConfirm
+          resetKey={vehicle.id}
           tankCapacity={vehicle.tankCapacity}
           liters={draftFuel}
           accentColor={fuelColor}

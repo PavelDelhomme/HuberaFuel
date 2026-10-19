@@ -129,6 +129,7 @@ import {
   parseYmdParam,
   type TripHistoryFilter,
 } from '@/lib/tripHistoryNav';
+import { vehicleChipLabel } from '@/lib/vehicleIdentity';
 import { downsampleRoute } from '@/lib/routeGeometry';
 import {
   extendRecordedTripEnds,
@@ -485,29 +486,38 @@ export default function TripScreen() {
     }
   }, [activeVehicle, colors.accent, historyAllVehicles, historyVehicleId]);
 
-  // Restaure le filtre véhicule historique (indépendant du véhicule actif)
+  // L’historique suit la voiture affichée. Un id mémorisé d’une autre voiture
+  // ne masque pas les trajets du véhicule actif.
+  const historyFollowsActive = useRef(true);
+  const seenActiveId = useRef<number | null>(null);
+  const [historyReady, setHistoryReady] = useState(false);
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
         const raw = await AsyncStorage.getItem(HISTORY_SCOPE_KEY);
         if (cancelled) return;
+        if (activeVehicle?.id != null) {
+          setHistoryAllVehicles(false);
+          setHistoryVehicleId(activeVehicle.id);
+          return;
+        }
         if (raw === 'all') {
           setHistoryAllVehicles(true);
           setHistoryVehicleId(null);
         } else if (raw && /^\d+$/.test(raw)) {
           setHistoryAllVehicles(false);
           setHistoryVehicleId(Number(raw));
-        } else if (activeVehicle?.id != null) {
-          setHistoryAllVehicles(false);
-          setHistoryVehicleId(activeVehicle.id);
         }
       } catch {
         if (!cancelled && activeVehicle?.id != null) {
           setHistoryVehicleId(activeVehicle.id);
         }
       } finally {
-        if (!cancelled) historyScopeReadyRef.current = true;
+        if (!cancelled) {
+          historyScopeReadyRef.current = true;
+          setHistoryReady(true);
+        }
       }
     })();
     return () => {
@@ -520,6 +530,21 @@ export default function TripScreen() {
     const value = all ? 'all' : vehicleId != null ? String(vehicleId) : '';
     void AsyncStorage.setItem(HISTORY_SCOPE_KEY, value).catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (!historyReady) return;
+    if (activeVehicle?.id == null) return;
+    if (seenActiveId.current != null && seenActiveId.current !== activeVehicle.id) {
+      historyFollowsActive.current = true;
+    }
+    seenActiveId.current = activeVehicle.id;
+    if (!historyFollowsActive.current) return;
+    if (historyAllVehicles || historyVehicleId !== activeVehicle.id) {
+      setHistoryAllVehicles(false);
+      setHistoryVehicleId(activeVehicle.id);
+      persistHistoryScope(false, activeVehicle.id);
+    }
+  }, [historyReady, activeVehicle?.id, historyAllVehicles, historyVehicleId, persistHistoryScope]);
 
   useEffect(() => {
     void loadLists();
@@ -3566,6 +3591,7 @@ export default function TripScreen() {
                 >
                   <Pressable
                     onPress={() => {
+                      historyFollowsActive.current = false;
                       setHistoryAllVehicles(true);
                       setHistoryVehicleId(null);
                       persistHistoryScope(true, null);
@@ -3596,6 +3622,7 @@ export default function TripScreen() {
                       <Pressable
                         key={v.id}
                         onPress={() => {
+                          historyFollowsActive.current = v.id === activeVehicle?.id;
                           setHistoryAllVehicles(false);
                           setHistoryVehicleId(v.id);
                           persistHistoryScope(false, v.id);
@@ -3605,7 +3632,7 @@ export default function TripScreen() {
                           {
                             borderColor: selected ? colors.accent : colors.border,
                             backgroundColor: selected ? colors.accent + '22' : colors.card,
-                            maxWidth: 140,
+                            maxWidth: 240,
                           },
                         ]}
                       >
@@ -3617,7 +3644,7 @@ export default function TripScreen() {
                           }}
                           numberOfLines={1}
                         >
-                          {v.name}
+                          {vehicleChipLabel(v)}
                         </Text>
                       </Pressable>
                     );
@@ -3893,15 +3920,19 @@ export default function TripScreen() {
               )}
             </>
           }
-          renderItem={({ item: t, index }) => (
+          renderItem={({ item: t, index }) => {
+            const veh = vehicles.find((v) => v.id === t.vehicleId);
+            return (
             <TripHistoryCard
               trip={t}
               onPress={openDetail}
               onDelete={handleDeleteTrip}
               showMap={mapVisibleIds.has(t.id) || index < 2}
               allTrips={history}
+              vehicleHint={veh ? vehicleChipLabel(veh) : `n°${t.vehicleId}`}
             />
-          )}
+            );
+          }}
         />
       )}
     </View>

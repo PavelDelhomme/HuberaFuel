@@ -19,6 +19,7 @@ import {
   deactivateVehicleScopedBudgets,
 } from './database';
 import { monthKeyFromDate, toLocalYmd } from './dates';
+import { tripAtOrAfter } from './tripHistoryNav';
 import {
   calculateFilteredRouteDistance,
   evaluateGpsSample,
@@ -282,7 +283,7 @@ export async function getSinceLastFillStats(vehicleId: number): Promise<SinceLas
       !t.isActive &&
       t.status !== 'rejected' &&
       t.distanceKm > 0 &&
-      t.startTime >= lastFill.date
+      tripAtOrAfter(t.startTime, lastFill.date)
   );
   const tripKm = Math.round(since.reduce((s, t) => s + t.distanceKm, 0) * 10) / 10;
   const fuelUsedEst = Math.round(estimateTripFuelLiters(vehicle, tripKm) * 100) / 100;

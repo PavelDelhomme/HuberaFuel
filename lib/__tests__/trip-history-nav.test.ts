@@ -7,8 +7,10 @@ import {
   parseVehicleIdParam,
   parseYmdParam,
   tripHistoryNav,
+  tripAtOrAfter,
   tripIsToday,
   tripStartedOnYmd,
+  tripYmd,
 } from '@/lib/tripHistoryNav';
 import {
   applyCalendarDayPick,
@@ -67,6 +69,14 @@ describe('parseHistoryFilter', () => {
     expect(parseVehicleIdParam('x')).toBeNull();
     expect(parseYmdParam('2026-09-12')).toBe('2026-09-12');
     expect(parseYmdParam('12/09/2026')).toBeNull();
+  });
+});
+
+describe('jour de trajet', () => {
+  it('lit un horodatage sans fuseau comme le jour écrit', () => {
+    expect(tripYmd('2026-10-19 14:02:00')).toBe('2026-10-19');
+    expect(tripIsToday('2026-10-19 14:02:00', new Date(2026, 9, 19, 18, 0, 0))).toBe(true);
+    expect(tripAtOrAfter('2026-10-19 08:00:00', '2026-10-18T18:00:00.000Z')).toBe(true);
   });
 });
 

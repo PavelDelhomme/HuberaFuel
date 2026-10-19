@@ -26,18 +26,21 @@ import { estimateTripFuelLiters } from '@/lib/consumptionModel';
 import { seedDemoData } from '@/lib/seedDemo';
 import { seedTodayCommuteAndFillUp } from '@/lib/seedToday';
 import { notify } from '@/lib/notify';
-import { getPlaces, getMaintenances, getTrips, reconcileTrackedKmFromTrips } from '@/lib/database';
+import { getPlaces, getMaintenances, getTrips, reconcileTrackedKmFromTrips, updateVehicle } from '@/lib/database';
 import { syncFailureMessage } from '@/lib/api';
 import { computeBudgetOutlook } from '@/lib/budgetOutlook';
 import { fuelGaugeSaveSummary, fuelRemainingTone, fuelToneColor, setFuelLiters } from '@/lib/fuelLevel';
 import { estimateCommutesRemaining } from '@/lib/commuteRange';
 import { checkNearestStationReach } from '@/lib/nearestStationReach';
+import { estimatedRangeKm } from '@/lib/stationDetour';
 import { getCurrentLocation, gpsMissText, locationReadiness } from '@/lib/locationService';
 import { FuelGaugeSlider } from '@/components/FuelGaugeSlider';
 import { TutorialAnchor } from '@/components/TutorialAnchor';
 import type { ConsumptionStats, Place, SinceLastFillStats, Trip, VehicleMaintenance } from '@/types';
 import { MAINTENANCE_KIND_LABELS, maintenanceIsUrgent } from '@/lib/vehicleMaintenance';
 import { formatDateSlash, formatRelativeDay, toLocalYmd } from '@/lib/dates';
+import { tripIsToday } from '@/lib/tripHistoryNav';
+import { vehicleIdentity } from '@/lib/vehicleIdentity';
 import { tripHistoryNav } from '@/lib/tripHistoryNav';
 
 export default function HomeScreen() {
@@ -72,15 +75,10 @@ export default function HomeScreen() {
     setStats(s);
     setSinceFill(since);
     setAllTrips(trips);
-    const ymd = toLocalYmd(new Date());
     setTodayTrips(
       trips.filter((t) => {
         if (t.isActive || t.distanceKm < 0.05) return false;
-        try {
-          return toLocalYmd(new Date(t.startTime)) === ymd;
-        } catch {
-          return t.startTime.slice(0, 10) === ymd;
-        }
+        return tripIsToday(t.startTime);
       })
     );
   };
@@ -309,7 +307,9 @@ export default function HomeScreen() {
         tankCapacity: activeVehicle.tankCapacity,
         lowLitersThreshold: activeVehicle.lowFuelThresholdLiters,
         rangeKm:
-          activeVehicle.estimatedFuelLiters != null ? sinceFill?.rangeKm : undefined,
+          activeVehicle.estimatedFuelLiters != null && activeVehicle.estimatedFuelLiters > 0
+            ? estimatedRangeKm(activeVehicle, activeVehicle.estimatedFuelLiters)
+            : undefined,
         vehicle: activeVehicle,
       })
     : 'unknown';
@@ -390,8 +390,7 @@ export default function HomeScreen() {
                   </Text>
                   <Text style={[styles.vehicleDetail, { color: colors.textSecondary }]}>
                     {displayOdometerKm(activeVehicle).toLocaleString(locale)} km
-                    {activeVehicle.fuelType ? ` · ${activeVehicle.fuelType}` : ''}
-                    {activeVehicle.year ? ` · année ${activeVehicle.year}` : ''}
+                    {` · ${vehicleIdentity(activeVehicle)}`}
                   </Text>
                 </View>
                 <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -425,6 +424,33 @@ export default function HomeScreen() {
                   >
                     <Ionicons name="refresh" size={18} color={colors.accent} />
                   </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      Alert.alert(
+                        'Niveau inconnu',
+                        'À utiliser si la voiture n’est plus la même ou si vous ne connaissez pas le niveau. Aucun plein n’est enregistré. La jauge arrête d’estimer les litres restants jusqu’au prochain réglage.',
+                        [
+                          { text: 'Annuler', style: 'cancel' },
+                          {
+                            text: 'Je ne sais pas',
+                            onPress: () => {
+                              void (async () => {
+                                await updateVehicle(activeVehicle.id, { estimatedFuelLiters: null });
+                                setHomeFuelDraft(null);
+                                await refresh();
+                                notify('Réservoir', 'Niveau marqué inconnu');
+                              })();
+                            },
+                          },
+                        ]
+                      );
+                    }}
+                    hitSlop={10}
+                    style={[styles.iconBtn, { borderColor: colors.border }]}
+                    accessibilityLabel="Indiquer que le niveau de carburant est inconnu"
+                  >
+                    <Ionicons name="help-circle-outline" size={18} color={colors.accent} />
+                  </Pressable>
                 </View>
               </View>
               <View
@@ -434,6 +460,7 @@ export default function HomeScreen() {
               >
                 <FuelGaugeSlider
                   requireConfirm
+                  resetKey={activeVehicle.id}
                   tankCapacity={activeVehicle.tankCapacity}
                   liters={homeFuelDraft}
                   accentColor={fuelColor}
@@ -458,12 +485,7 @@ export default function HomeScreen() {
                   // Uniquement la jauge véhicule — pas sinceFill (0 par défaut sans plein → « ~0.0 L » fantôme).
                   const rem = homeFuelDraft ?? activeVehicle.estimatedFuelLiters ?? null;
                   if (rem == null) return null;
-                  const rangeKm =
-                    rem > 0 && activeVehicle.consumptionPer100 > 0
-                      ? Math.round((rem / activeVehicle.consumptionPer100) * 100)
-                      : sinceFill?.rangeKm && activeVehicle.estimatedFuelLiters != null
-                        ? sinceFill.rangeKm
-                        : 0;
+                  const rangeKm = rem > 0 ? estimatedRangeKm(activeVehicle, rem) : 0;
                   return (
                     <Text
                       style={{
@@ -581,14 +603,6 @@ export default function HomeScreen() {
                 }
                 subtitle={
                   stats && stats.averageConsumption > 0 ? 'D’après vos pleins' : 'Catalogue'
-                }
-              />
-              <StatCard
-                label="Autonomie"
-                value={formatDistance(sinceFill?.rangeKm ?? 0)}
-                color={fuelColor}
-                subtitle={
-                  homeFuelDraft != null ? `${homeFuelDraft.toFixed(0)} L restants` : undefined
                 }
               />
             </View>
