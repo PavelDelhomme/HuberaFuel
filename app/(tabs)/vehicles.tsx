@@ -9,6 +9,7 @@ import { useToast } from '@/context/ToastContext';
 import { VehicleCard } from '@/components/VehicleCard';
 import { Button } from '@/components/Button';
 import { TutorialAnchor } from '@/components/TutorialAnchor';
+import { DrawerEdgeBand } from '@/components/DrawerEdgeSwipe';
 import { deleteVehicle } from '@/lib/database';
 import { confirm, notify } from '@/lib/notify';
 import { syncFailureMessage } from '@/lib/api';
@@ -119,6 +120,7 @@ export default function VehiclesScreen() {
           <Button title="Ajouter un véhicule" onPress={() => router.push('/vehicle/add')} />
         </View>
       )}
+      <DrawerEdgeBand />
     </View>
   );
 }

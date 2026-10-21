@@ -11,6 +11,7 @@ import { useToast } from '@/context/ToastContext';
 import { Card, StatCard, ProgressBar } from '@/components/Card';
 import { Button } from '@/components/Button';
 import { SpeedDialFab } from '@/components/SpeedDialFab';
+import { DrawerEdgeBand } from '@/components/DrawerEdgeSwipe';
 import { PendingAccountsBanner } from '@/components/PendingAccountsBanner';
 import { InstallAppHint } from '@/components/InstallAppHint';
 import {
@@ -968,6 +969,7 @@ export default function HomeScreen() {
           ]}
         />
       </TutorialAnchor>
+      <DrawerEdgeBand />
     </View>
   );
 }

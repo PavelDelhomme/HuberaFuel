@@ -1,3 +1,4 @@
+import { View } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -15,6 +16,7 @@ import { AppUpdateProvider, useAppUpdate } from '@/context/AppUpdateContext';
 import { HeaderActions } from '@/components/HeaderActions';
 import { HeaderBackButton } from '@/components/HeaderBackButton';
 import { AccountDrawer } from '@/components/AccountDrawer';
+import { DrawerEdgeBand } from '@/components/DrawerEdgeSwipe';
 import { ClientOnly } from '@/components/ClientOnly';
 import { AppUpdateModal } from '@/components/AppUpdateModal';
 import { FuelGaugeModalHost } from '@/components/FuelGaugeModalHost';
@@ -33,7 +35,7 @@ function RootNavigation() {
   const update = useAppUpdate();
 
   return (
-    <>
+    <View style={{ flex: 1 }}>
       <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
       <RegisterServiceWorker />
       <Stack
@@ -147,7 +149,8 @@ function RootNavigation() {
         onLater={update.snoozeLater}
         onSiteInstall={update.openManualInstall}
       />
-    </>
+      <DrawerEdgeBand />
+    </View>
   );
 }
 
