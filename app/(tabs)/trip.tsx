@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   View,
   Text,
@@ -117,6 +117,8 @@ import { fetchSpeedLimitNear, type SpeedLimitInfo } from '@/lib/roadSpeedLimits'
 import { forwardGeocode } from '@/lib/geocode';
 import { notify, confirm } from '@/lib/notify';
 import { TripHistoryCard } from '@/components/TripHistoryCard';
+import { CabinComfortCard } from '@/components/CabinComfortCard';
+import { cabinComfortFactor, getCabinComfort, subscribeCabinComfort } from '@/lib/cabinComfort';
 import { reverseGeocode, tripPlaceLabel } from '@/lib/geocode';
 import { acceptMapDisplayFix } from '@/lib/gpsTracking';
 import { currentMonthKey, formatDateSlash, formatRelativeDay, toLocalYmd } from '@/lib/dates';
@@ -1660,7 +1662,7 @@ export default function TripScreen() {
             idleMinutes,
             accelFactor,
             stopGoFactor,
-          })
+          }) * cabinComfortFactor()
         : trip.estimatedFuelUsed;
       const fills = vehicle ? await getFillUps(vehicle.id).catch(() => []) : [];
       const lastFill = [...fills].sort((a, b) => b.date.localeCompare(a.date))[0];
@@ -1786,23 +1788,18 @@ export default function TripScreen() {
     if (isStopping) return;
 
     setIsStopping(true);
-
-    // Arrivée : 1 geste → récap (sans double confirm / jauge)
-    if (opts?.fromArrival) {
-      try {
-        await finishTripCore({ openRecap: true, skipGauge: true });
-      } catch (e) {
-        notify('Erreur', e instanceof Error ? e.message : 'Impossible de terminer le trajet.');
-      } finally {
-        setIsStopping(false);
-        setStopConfirm(false);
-      }
-      return;
+    setStopConfirm(false);
+    try {
+      await finishTripCore({
+        openRecap: true,
+        skipGauge: true,
+        keepShort: !opts?.fromArrival,
+      });
+    } catch (e) {
+      notify('Erreur', e instanceof Error ? e.message : 'Impossible de terminer le trajet.');
+    } finally {
+      setIsStopping(false);
     }
-
-    // Confirmation in-app (pas d’Alert Android : elle plante avec la jauge / le GPS).
-    setStopConfirm(true);
-    setIsStopping(false);
   };
 
   const confirmStopTrip = async () => {
@@ -2453,13 +2450,14 @@ export default function TripScreen() {
         : (activeTrip.distanceKm / Math.max(tripStats.durationMinutes, 0.01)) * 60
       : 0;
 
+  const cabin = useSyncExternalStore(subscribeCabinComfort, getCabinComfort, getCabinComfort);
   const liveActiveFuel =
     activeTrip && activeVehicle
-      ? activeTrip.estimatedFuelUsed > 0.05
-        ? activeTrip.estimatedFuelUsed
-        : estimateTripFuelLiters(activeVehicle, activeTrip.distanceKm, {
-            learnedFactor: activeVehicle.consumptionLearnFactor,
-          })
+      ? (activeTrip.estimatedFuelUsed > 0.05
+          ? activeTrip.estimatedFuelUsed
+          : estimateTripFuelLiters(activeVehicle, activeTrip.distanceKm, {
+              learnedFactor: activeVehicle.consumptionLearnFactor,
+            })) * cabinComfortFactor(cabin)
       : 0;
   const liveActiveCost =
     activeTrip && activeVehicle
@@ -3499,6 +3497,8 @@ export default function TripScreen() {
               />
             </View>
           ) : null}
+
+          <CabinComfortCard />
 
           {!activeTrip ? (
             <SpeedDialFab
