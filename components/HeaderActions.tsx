@@ -1,8 +1,9 @@
 import React, { useRef } from 'react';
-import { Pressable, View, StyleSheet, Platform, Animated, Easing } from 'react-native';
+import { Pressable, View, StyleSheet, Platform, Animated, Easing, Modal, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
+import { listHuberaAccounts } from '@/lib/huberaIdSso';
 import { useApp } from '@/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { useToast } from '@/context/ToastContext';
@@ -16,6 +17,8 @@ export function HeaderActions() {
   const { showToast } = useToast();
   const [busy, setBusy] = React.useState(false);
   const [offline, setOffline] = React.useState(false);
+  const [accountsOpen, setAccountsOpen] = React.useState(false);
+  const [accountEmails, setAccountEmails] = React.useState<string[]>([]);
   const spin = useRef(new Animated.Value(0)).current;
   const loop = useRef<Animated.CompositeAnimation | null>(null);
 
@@ -79,12 +82,61 @@ export function HeaderActions() {
     outputRange: ['0deg', '360deg'],
   });
 
+  const openAccounts = () => {
+    setAccountsOpen(true);
+    void listHuberaAccounts().then((rows) => {
+      const seen = new Set<string>();
+      const emails: string[] = [];
+      const push = (raw: string | undefined) => {
+        const mail = raw?.trim();
+        if (!mail) return;
+        const key = mail.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        emails.push(mail);
+      };
+      rows.forEach((row) => push(row.email));
+      push(user?.email);
+      setAccountEmails(emails);
+    });
+  };
+
   return (
     <View style={styles.row}>
+      <Modal
+        visible={accountsOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAccountsOpen(false)}
+      >
+        <Pressable style={styles.backdrop} onPress={() => setAccountsOpen(false)}>
+          <Pressable style={[styles.menu, { backgroundColor: colors.card }]} onPress={() => {}}>
+            {accountEmails.map((mail) => (
+              <View key={mail} style={styles.menuRow} accessibilityLabel={mail}>
+                <Text style={[styles.menuMail, { color: colors.text }]} numberOfLines={1}>
+                  {mail}
+                </Text>
+                <Text style={[styles.menuSub, { color: colors.textSecondary }]}>Compte Hubera ID</Text>
+              </View>
+            ))}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Paramètres"
+              onPress={() => {
+                setAccountsOpen(false);
+                router.push('/account' as never);
+              }}
+              style={styles.menuRow}
+            >
+              <Text style={[styles.menuMail, { color: colors.text }]}>Paramètres</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
       <Pressable
-        onPress={() => router.push('/account' as never)}
+        onPress={openAccounts}
         accessibilityRole="button"
-        accessibilityLabel="Compte Hubera"
+        accessibilityLabel="Compte"
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         style={[
           styles.actionBtn,
@@ -144,5 +196,30 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-start',
+    alignItems: 'flex-end',
+    paddingTop: 72,
+    paddingRight: 12,
+  },
+  menu: {
+    width: 280,
+    borderRadius: 12,
+    paddingVertical: 8,
+  },
+  menuRow: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  menuMail: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  menuSub: {
+    fontSize: 12,
+    marginTop: 2,
   },
 });
