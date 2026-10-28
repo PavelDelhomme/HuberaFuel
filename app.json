@@ -2,7 +2,7 @@
   "expo": {
     "name": "Hubera Fuel",
     "slug": "gasoil-tracking",
-    "version": "1.4.194",
+    "version": "1.4.196",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "gasoiltracking",
@@ -24,11 +24,11 @@
       "infoPlist": {
         "CFBundleDisplayName": "Hubera Fuel",
         "ITSAppUsesNonExemptEncryption": false,
-        "NSLocationWhenInUseUsageDescription": "Hubera Fuel utilise votre position pour suivre vos trajets et calculer la consommation en temps réel.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "Hubera Fuel suit vos trajets en arrière-plan pendant la navigation pour estimer la consommation de carburant.",
-        "NSLocationAlwaysUsageDescription": "Hubera Fuel suit vos trajets en arrière-plan pendant la navigation pour estimer la consommation de carburant.",
+        "NSLocationWhenInUseUsageDescription": "Hubera Fuel utilise votre position pour suivre vos trajets et calculer la consommation en temps r\u00e9el.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Hubera Fuel suit vos trajets en arri\u00e8re-plan pendant la navigation pour estimer la consommation de carburant.",
+        "NSLocationAlwaysUsageDescription": "Hubera Fuel suit vos trajets en arri\u00e8re-plan pendant la navigation pour estimer la consommation de carburant.",
         "NSContactsUsageDescription": "Hubera Fuel propose les adresses de vos contacts comme destinations de trajet.",
-        "NSCameraUsageDescription": "Hubera Fuel utilise la caméra pour scanner le QR de connexion et photographier le CT ou la carte grise.",
+        "NSCameraUsageDescription": "Hubera Fuel utilise la cam\u00e9ra pour scanner le QR de connexion et photographier le CT ou la carte grise.",
         "NSPhotoLibraryUsageDescription": "Hubera Fuel peut joindre une photo du CT ou de la carte grise.",
         "LSApplicationQueriesSchemes": [
           "hubera-maps",
@@ -83,7 +83,7 @@
           "apiKey": "VOTRE_CLE_GOOGLE_MAPS_ANDROID"
         }
       },
-      "versionCode": 220,
+      "versionCode": 222,
       "intentFilters": [
         {
           "action": "VIEW",
@@ -117,7 +117,7 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Hubera Fuel suit vos trajets en arrière-plan pour calculer la consommation.",
+          "locationAlwaysAndWhenInUsePermission": "Hubera Fuel suit vos trajets en arri\u00e8re-plan pour calculer la consommation.",
           "isAndroidBackgroundLocationEnabled": true,
           "isAndroidForegroundServiceEnabled": true
         }
@@ -139,14 +139,14 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Hubera Fuel utilise la caméra pour scanner le QR de connexion du site web.",
+          "cameraPermission": "Hubera Fuel utilise la cam\u00e9ra pour scanner le QR de connexion du site web.",
           "barcodeScannerEnabled": true
         }
       ],
       [
         "expo-image-picker",
         {
-          "cameraPermission": "Hubera Fuel utilise la caméra pour photographier le CT ou la carte grise."
+          "cameraPermission": "Hubera Fuel utilise la cam\u00e9ra pour photographier le CT ou la carte grise."
         }
       ],
       "expo-asset",
@@ -164,7 +164,7 @@
       "eas": {
         "projectId": "d85bab84-0971-4266-8f8c-a37113bc7761"
       },
-      "whatsNew": "Chrome hamburger + compte Hubera ID. Jauge → modèle conso inchangé. Dual APK, MAJ jamais forcée.",
+      "whatsNew": "Chrome hamburger + compte Hubera ID. Jauge \u2192 mod\u00e8le conso inchang\u00e9. Dual APK, MAJ jamais forc\u00e9e.",
       "router": {
         "origin": false
       }

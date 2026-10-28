@@ -103,4 +103,15 @@ describe('consumption-physics', () => {
     expect(heur).not.toBe(phys);
     expect(heur).toBeGreaterThan(1);
   });
+
+  it('ralenti : 10 min à l’arrêt compte la conso idle', () => {
+    const t0 = 1_700_000_000_000;
+    const pts = [
+      { latitude: 48.11, longitude: -1.68, timestamp: t0, speed: 0 },
+      { latitude: 48.11, longitude: -1.68, timestamp: t0 + 600_000, speed: 0 },
+    ];
+    const L = estimateTripFuelPhysics(vehicle, pts);
+    expect(L).toBeGreaterThan(0.05);
+    expect(L).toBeLessThan(2);
+  });
 });

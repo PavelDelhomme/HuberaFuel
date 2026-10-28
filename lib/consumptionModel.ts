@@ -202,11 +202,14 @@ export function estimateTripFuelPhysics(
     const a = points[i - 1];
     const b = points[i];
     const dt = (b.timestamp - a.timestamp) / 1000;
-    if (!Number.isFinite(dt) || dt <= 0 || dt > 180) continue;
+    if (!Number.isFinite(dt) || dt <= 0) continue;
     const dKm = haversineKm(a.latitude, a.longitude, b.latitude, b.longitude);
     const dM = dKm * 1000;
     if (dM > 500) continue;
     const v = dM / dt;
+    // Mouvement : plafond 180 s (anti-saut GPS). Arrêt / ralenti : jusqu’à 20 min.
+    const idleLike = v < 2 / 3.6 || dM < 2;
+    if (idleLike ? dt > 1200 : dt > 180) continue;
     if (v > 50) continue;
     const accel = (v - prevV) / dt;
     prevV = v;

@@ -1,7 +1,9 @@
+import { useEffect } from 'react';
 import { View } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import * as SplashScreen from 'expo-splash-screen';
 // Enregistre la task GPS background le plus tôt possible (Expo TaskManager)
 import '@/lib/locationService';
 import '@/lib/mapsSilent';
@@ -25,6 +27,8 @@ import { OnboardingTutorial } from '@/components/OnboardingTutorial';
 import { TutorialProvider } from '@/context/TutorialContext';
 import { useApp } from '@/context/AppContext';
 
+void SplashScreen.preventAutoHideAsync().catch(() => undefined);
+
 function TutorialBridge({ children }: { children: React.ReactNode }) {
   const { refresh } = useApp();
   return <TutorialProvider onRefresh={refresh}>{children}</TutorialProvider>;
@@ -34,8 +38,12 @@ function RootNavigation() {
   const { colors, scheme } = useTheme();
   const update = useAppUpdate();
 
+  useEffect(() => {
+    void SplashScreen.hideAsync().catch(() => undefined);
+  }, []);
+
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1 }} onLayout={() => { void SplashScreen.hideAsync().catch(() => undefined); }}>
       <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
       <RegisterServiceWorker />
       <Stack

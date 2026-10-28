@@ -137,16 +137,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const stored = await getStoredUser();
       if (stored && (token || refresh)) {
         setUser(stored);
-        try {
-          await refreshMe();
-        } catch {
-          /* hors ligne : on garde le compte affiché */
-        }
-        try {
-          await syncPreferNewer();
-        } catch {
-          /* offline */
-        }
+        // Première peinture tout de suite — sync réseau derrière.
+        setLoading(false);
+        void refreshMe().catch(() => undefined);
+        void syncPreferNewer().catch(() => undefined);
+        return;
       }
       setLoading(false);
     })();

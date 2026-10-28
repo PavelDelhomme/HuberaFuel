@@ -79,6 +79,9 @@ export function seedLivePointsCache(
   livePointsCache = { tripId, vehicleId, points: points.slice() };
 }
 
+/** Heartbeat idle : au moins 1 point / 45 s à l’arrêt pour la conso ralenti. */
+const IDLE_HEARTBEAT_MS = 45_000;
+
 function pointFromLocation(loc: Location.LocationObject, prev: RoutePoint | null): RoutePoint | null {
   const sample: GpsSample = {
     latitude: loc.coords.latitude,
@@ -88,7 +91,24 @@ function pointFromLocation(loc: Location.LocationObject, prev: RoutePoint | null
     speed: loc.coords.speed ?? undefined,
   };
   const verdict = evaluateGpsSample(prev, sample, { isFirst: !prev });
-  if (!verdict.accept) return null;
+  if (!verdict.accept) {
+    // Trajet actif + arrêt : garder un point périodique (même lieu) pour le ralenti.
+    const reason = verdict.reason;
+    if (
+      prev &&
+      (reason === 'stationary' || reason === 'too_close') &&
+      sample.timestamp - prev.timestamp >= IDLE_HEARTBEAT_MS
+    ) {
+      return {
+        latitude: prev.latitude,
+        longitude: prev.longitude,
+        timestamp: sample.timestamp,
+        speed: 0,
+        ...(prev.altitude != null ? { altitude: prev.altitude } : {}),
+      };
+    }
+    return null;
+  }
   const use = verdict.sample || sample;
   const entry: RoutePoint = {
     latitude: Math.round(use.latitude * 1e6) / 1e6,
@@ -360,11 +380,13 @@ export async function appendForcedLocation(
 async function ensureForegroundWatch(): Promise<void> {
   if (Platform.OS === 'web' || foregroundWatch) return;
   try {
+    // Watch FG = filet OEM (moins fréquent que le FGS 5 s / 16 m) → moins de drain
+    // sans perdre le tracé : le FGS reste la source principale.
     foregroundWatch = await Location.watchPositionAsync(
       {
         accuracy: Location.Accuracy.Balanced,
-        timeInterval: TRIP_GPS_TIME_MS,
-        distanceInterval: TRIP_GPS_DISTANCE_M,
+        timeInterval: Math.max(TRIP_GPS_TIME_MS * 2, 10_000),
+        distanceInterval: Math.max(TRIP_GPS_DISTANCE_M, 24),
       },
       (pos) => {
         void enqueueTripUpdate(async () => {
