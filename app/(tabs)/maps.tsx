@@ -29,6 +29,7 @@ import { fetchSpeedLimitNear, type SpeedLimitInfo } from '@/lib/roadSpeedLimits'
 import { forwardGeocode } from '@/lib/geocode';
 import { formatDistance, formatSpeedKmh, parseRoutePoints, calculateRouteDistance, type RoutePoint } from '@/lib/calculations';
 import { Button } from '@/components/Button';
+import { Card } from '@/components/Card';
 import { DrawerMenuButton } from '@/components/DrawerMenuButton';
 import { HeaderActions } from '@/components/HeaderActions';
 import { TutorialAnchor } from '@/components/TutorialAnchor';
@@ -84,6 +85,8 @@ export default function MapsScreen() {
   const [routesLoading, setRoutesLoading] = useState(false);
   const [starting, setStarting] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** Confirmation avant arrêt suivi libre / trajet (comme Google Maps « Quitter »). */
+  const [stopConfirm, setStopConfirm] = useState(false);
   /** UI live même si le Context met 1 frame à voir le trajet actif (notif FGS déjà là). */
   const [sessionTracking, setSessionTracking] = useState(false);
   const [sessionTripId, setSessionTripId] = useState<number | null>(null);
@@ -92,6 +95,10 @@ export default function MapsScreen() {
   const [nowMs, setNowMs] = useState(Date.now());
   const suggestDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stopInFlight = useRef(false);
+  /** Bloque la résurrection Pause/Terminer juste après un arrêt réussi. */
+  const stopCooldownUntil = useRef(0);
+  /** Ids capturés au démarrage — le 1er Terminer ne doit pas dépendre du Context encore froid. */
+  const stopTripRef = useRef<{ tripId: number; vehicleId: number } | null>(null);
   const didCenterOnUser = useRef(false);
 
   const tracking = Boolean(activeTrip?.isActive) || sessionTracking;
@@ -116,20 +123,27 @@ export default function MapsScreen() {
     if (activeTrip?.isActive) {
       setSessionTracking(true);
       setSessionTripId(activeTrip.id);
+      if (activeTrip.vehicleId != null) {
+        stopTripRef.current = { tripId: activeTrip.id, vehicleId: activeTrip.vehicleId };
+      }
       return;
     }
-    if (starting || busy) return;
+    if (starting || busy || stopConfirm || stopInFlight.current) return;
+    if (Date.now() < stopCooldownUntil.current) return;
     // FGS / buffer encore vivant alors que le Context a perdu le trajet
     // (ex. sync qui tuait les tiny) → garder Pause / Terminer.
     const liveId = peekLiveTripId();
     if (liveId != null) {
       setSessionTracking(true);
       setSessionTripId(liveId);
+      const vid = activeVehicle?.id;
+      if (vid != null) stopTripRef.current = { tripId: liveId, vehicleId: vid };
       return;
     }
     setSessionTracking(false);
     setSessionTripId(null);
-  }, [activeTrip?.isActive, activeTrip?.id, starting, busy]);
+    stopTripRef.current = null;
+  }, [activeTrip?.isActive, activeTrip?.id, activeTrip?.vehicleId, activeVehicle?.id, starting, busy, stopConfirm]);
 
   const refreshLoc = useCallback(async () => {
     // Last-known rapide pour afficher le point tout de suite, puis fix plus frais.
@@ -600,6 +614,8 @@ export default function MapsScreen() {
         // Affiche tout de suite Pause / Terminer (évite l’écran « lieux » alors que FGS tourne)
         setSessionTracking(true);
         setSessionTripId(r.tripId);
+        stopTripRef.current = { tripId: r.tripId, vehicleId: activeVehicle.id };
+        setStopConfirm(false);
         setSuggestLocked(true);
         setSearchHits([]);
         await refresh();
@@ -729,17 +745,31 @@ export default function MapsScreen() {
     }
   };
 
+  const requestStop = () => {
+    if (busy || stopInFlight.current) return;
+    const tripId = stopTripRef.current?.tripId ?? activeTrip?.id ?? sessionTripId;
+    const vehicleId =
+      stopTripRef.current?.vehicleId ?? activeTrip?.vehicleId ?? activeVehicle?.id;
+    if (tripId == null || vehicleId == null) {
+      showToast('Suivi pas encore prêt — réessaie dans une seconde.');
+      return;
+    }
+    setStopConfirm(true);
+  };
+
   const onStop = async () => {
-    const tripId = activeTrip?.id ?? sessionTripId;
-    const vehicleId = activeTrip?.vehicleId ?? activeVehicle?.id;
-    if (!tripId || vehicleId == null) return;
-    if (busy || stopInFlight.current || !tracking) return; // anti double-tap
+    const tripId = stopTripRef.current?.tripId ?? activeTrip?.id ?? sessionTripId;
+    const vehicleId =
+      stopTripRef.current?.vehicleId ?? activeTrip?.vehicleId ?? activeVehicle?.id;
+    if (tripId == null || vehicleId == null) {
+      showToast('Impossible de terminer : trajet introuvable.');
+      setStopConfirm(false);
+      return;
+    }
+    if (stopInFlight.current) return; // anti double-tap
     stopInFlight.current = true;
     setBusy(true);
-    // Couper l’UI tout de suite — sinon peekLiveTripId ressuscite Pause/Terminer.
-    setSessionTracking(false);
-    setSessionTripId(null);
-    setLiveTail([]);
+    setStopConfirm(false);
     try {
       const tailKm =
         liveTail.length >= 2
@@ -758,6 +788,12 @@ export default function MapsScreen() {
         distanceKm,
         refresh,
       });
+      // Couper l’UI seulement après succès — sinon le 1er clic « disparaît » puis resurrect.
+      stopCooldownUntil.current = Date.now() + 4000;
+      setSessionTracking(false);
+      setSessionTripId(null);
+      stopTripRef.current = null;
+      setLiveTail([]);
       setPendingDest(null);
       setPlannedRoute([]);
       setRouteOptions([]);
@@ -775,11 +811,9 @@ export default function MapsScreen() {
       }
     } catch {
       showToast('Impossible de terminer le trajet');
-      // Si échec, retenter l’affichage suivi si le trajet est encore actif
-      if (activeTrip?.isActive) {
-        setSessionTracking(true);
-        setSessionTripId(activeTrip.id);
-      }
+      setSessionTracking(true);
+      setSessionTripId(tripId);
+      stopTripRef.current = { tripId, vehicleId };
     } finally {
       stopInFlight.current = false;
       setBusy(false);
@@ -1108,7 +1142,36 @@ export default function MapsScreen() {
         ) : null}
 
         <View style={styles.actions}>
-          {tracking ? (
+          {tracking && stopConfirm ? (
+            <Card
+              style={{
+                flex: 1,
+                borderColor: colors.danger,
+                borderWidth: 1,
+                padding: 12,
+              }}
+            >
+              <Text style={{ color: colors.text, fontWeight: '800', marginBottom: 6 }}>
+                Arrêter le suivi ?
+              </Text>
+              <Text style={{ color: colors.textSecondary, fontSize: 13, marginBottom: 12 }}>
+                Le GPS s’arrête et le trajet est enregistré. Valide seulement si tu as vraiment fini.
+              </Text>
+              <Button
+                title={busy ? 'Arrêt…' : 'Oui, terminer'}
+                variant="danger"
+                onPress={() => void onStop()}
+                disabled={busy}
+                style={{ marginBottom: 8 }}
+              />
+              <Button
+                title="Continuer"
+                variant="outline"
+                onPress={() => setStopConfirm(false)}
+                disabled={busy}
+              />
+            </Card>
+          ) : tracking ? (
             paused ? (
               <>
                 <Button
@@ -1127,7 +1190,7 @@ export default function MapsScreen() {
                 <Button
                   title="Terminer"
                   variant="danger"
-                  onPress={() => void onStop()}
+                  onPress={requestStop}
                   disabled={busy}
                   style={{ flex: 1 }}
                 />
@@ -1144,7 +1207,7 @@ export default function MapsScreen() {
                 <Button
                   title="Terminer"
                   variant="danger"
-                  onPress={() => void onStop()}
+                  onPress={requestStop}
                   disabled={busy}
                   style={{ flex: 1 }}
                 />

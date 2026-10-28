@@ -31,6 +31,11 @@ export async function handleMapsControlPayload(raw: Record<string, unknown> | nu
     vehicleId: str('vehicleId'),
   };
   const result = await runMapsTripControl(input);
+  // snapshot / history / select : ne pas relancer Maps (volait le 1er plan pendant le suivi Fuel).
+  // Maps relira au prochain hop utile (pause / stop / fill / start) ou à la reprise focus.
+  if (action === 'snapshot' || action === 'history' || action === 'select') {
+    return;
+  }
   const q = new URLSearchParams();
   if (result.tripId) q.set('tripId', String(result.tripId));
   if (result.message) q.set('msg', result.message);

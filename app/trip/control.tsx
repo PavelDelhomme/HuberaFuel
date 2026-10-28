@@ -48,19 +48,23 @@ export default function TripControlFromMaps() {
         refresh
       );
       if (!silent) showToast(result.message);
-      const q = new URLSearchParams();
-      if (result.tripId) q.set('tripId', String(result.tripId));
-      if (result.message) q.set('msg', result.message);
-      if (result.trips) q.set('trips', result.trips);
-      if (result.snap) q.set('snap', result.snap);
-      if (result.km != null && result.km > 0) q.set('km', String(Math.round(result.km * 10) / 10));
-      if (result.trackingStarted === false) q.set('started', '0');
-      if (result.trackingStarted === true) q.set('started', '1');
-      q.set('ok', result.ok ? '1' : '0');
-      try {
-        await Linking.openURL(`hubera-maps://fuel?${q.toString()}`);
-      } catch {
-        if (!silent) router.replace('/(tabs)' as never);
+      const act = String(params.action || '').toLowerCase();
+      const skipMapsHop = act === 'snapshot' || act === 'history' || act === 'select';
+      if (!skipMapsHop) {
+        const q = new URLSearchParams();
+        if (result.tripId) q.set('tripId', String(result.tripId));
+        if (result.message) q.set('msg', result.message);
+        if (result.trips) q.set('trips', result.trips);
+        if (result.snap) q.set('snap', result.snap);
+        if (result.km != null && result.km > 0) q.set('km', String(Math.round(result.km * 10) / 10));
+        if (result.trackingStarted === false) q.set('started', '0');
+        if (result.trackingStarted === true) q.set('started', '1');
+        q.set('ok', result.ok ? '1' : '0');
+        try {
+          await Linking.openURL(`hubera-maps://fuel?${q.toString()}`);
+        } catch {
+          if (!silent) router.replace('/(tabs)' as never);
+        }
       }
       router.replace('/(tabs)' as never);
     })();

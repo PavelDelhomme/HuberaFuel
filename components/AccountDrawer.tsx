@@ -113,10 +113,6 @@ export function AccountDrawer() {
                 v{getLocalAppVersion()}
                 {info?.version ? ` · serveur ${info.version}` : ''}
               </Text>
-              <Text style={{ color: colors.textSecondary, fontSize: 11, marginTop: 8, lineHeight: 16 }}>
-                {info?.hubera?.message ||
-                  'Hubera Fuel (ex Gasoil Tracking). Tes données restent. fuel.hubera.cloud — l’ancien gasoil-tracking.delhomme.ovh continue.'}
-              </Text>
             </View>
             <Pressable
               onPress={closeDrawer}

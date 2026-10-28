@@ -14,10 +14,7 @@ export function huberaNotice() {
     identity: 'cloud.hubera.fuel',
     canonical_url: 'https://fuel.hubera.cloud',
     legacy_url: 'https://gasoil-tracking.delhomme.ovh',
-    message:
-      'Hubera Fuel s’appelle désormais Hubera Fuel. Tes trajets, véhicules et ton compte restent. ' +
-      'Nouveau domaine : fuel.hubera.cloud — gasoil-tracking.hubera.cloud et gasoil-tracking.delhomme.ovh continuent. ' +
-      'Même application Android (package cloud.hubera.fuel).',
+    message: '',
   };
 }
 

@@ -1,6 +1,7 @@
 import { HeaderActions } from '@/components/HeaderActions';
 import { DrawerMenuButton } from '@/components/DrawerMenuButton';
 import { useTheme } from '@/hooks/useTheme';
+import { useApp } from '@/context/AppContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
@@ -19,6 +20,7 @@ const TAB_ITEM_STYLE = {
 
 export default function TabLayout() {
   const { colors } = useTheme();
+  const { activeTrip } = useApp();
   const insets = useSafeAreaInsets();
   const topPad = Math.max(
     insets.top,
@@ -26,19 +28,23 @@ export default function TabLayout() {
   );
   const bottomPad = Math.max(insets.bottom, Platform.OS === 'android' ? 24 : 8);
   const tabBarHeight = 52 + bottomPad;
+  // Pendant un trajet : comme Google Maps — la barre d’onglets cède la place au HUD.
+  const inTrip = Boolean(activeTrip?.isActive);
 
   return (
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.tabIconDefault,
-        tabBarStyle: {
-          backgroundColor: colors.card,
-          borderTopColor: colors.border,
-          height: tabBarHeight,
-          paddingBottom: bottomPad,
-          paddingTop: 6,
-        },
+        tabBarStyle: inTrip
+          ? { display: 'none' }
+          : {
+              backgroundColor: colors.card,
+              borderTopColor: colors.border,
+              height: tabBarHeight,
+              paddingBottom: bottomPad,
+              paddingTop: 6,
+            },
         tabBarLabelStyle: TAB_LABEL_STYLE,
         tabBarItemStyle: TAB_ITEM_STYLE,
         tabBarAllowFontScaling: false,

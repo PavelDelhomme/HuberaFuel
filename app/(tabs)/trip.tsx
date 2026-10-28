@@ -69,6 +69,7 @@ import {
   readLiveTripBuffer,
 } from '@/lib/liveTripBuffer';
 import { buildViaWaypoints, launchGoogleMapsNavigation, openGoogleMapsHere } from '@/lib/mapsNavigation';
+import { openHuberaMapsForTrip } from '@/lib/huberaMaps';
 import {
   appendRoutePoint,
   calculateRouteDistance,
@@ -1348,12 +1349,23 @@ export default function TripScreen() {
       await new Promise((r) => setTimeout(r, 400));
       const tripIdForMaps = (await getActiveTripLite())?.id;
       if (effectiveMode === 'free') {
-        const opened = await openGoogleMapsHere(mapsOrigin || userLocation || undefined);
-        if (!opened) {
-          notify(
-            'Google Maps',
-            'Impossible d’ouvrir Google Maps — le suivi GPS continue dans Fuel.'
-          );
+        // Une seule ouverture Hubera Maps (track), pas de boucle MAIN/geo.
+        const origin = mapsOrigin || userLocation || undefined;
+        const hubera = await openHuberaMapsForTrip({
+          tripId: tripIdForMaps,
+          vehicleId: activeVehicle?.id,
+          mode: 'free',
+          fromLat: origin?.latitude,
+          fromLon: origin?.longitude,
+        });
+        if (!hubera) {
+          const opened = await openGoogleMapsHere(origin);
+          if (!opened) {
+            notify(
+              'Maps',
+              'Impossible d’ouvrir Hubera Maps — le suivi GPS continue dans Fuel.'
+            );
+          }
         }
       } else if (effectiveMode === 'nav' && mapsLabel && mapsDest) {
         void pushRecentDestination({
@@ -2994,7 +3006,7 @@ export default function TripScreen() {
                       </Pressable>
                     )}
                     <Pressable
-                      onPress={() => void handleStopTrip()}
+                      onPress={() => setStopConfirm(true)}
                       disabled={isStopping}
                       style={[
                         styles.activeBtn,

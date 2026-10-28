@@ -921,9 +921,7 @@ app.get('/api/version', (req, res) => {
     installPage: `${pub}/install`,
     iosInstallUrl: `${pub}/download#ios`,
     releaseNotes: (() => {
-      const notes = brandUserText(latest?.release_notes || '');
-      if (/hubera fuel/i.test(notes)) return notes;
-      return `Hubera Fuel — l’app s’appelle désormais Hubera Fuel. Tes trajets, véhicules et ton compte restent. ${notes}`.trim();
+      return brandUserText(latest?.release_notes || '');
     })(),
     buildingVersion,
     buildingSince,
