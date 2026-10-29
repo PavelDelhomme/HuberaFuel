@@ -26,4 +26,17 @@ describe('huberaMaps urls', () => {
       'https://maps.hubera.cloud/?tripId=1&mode=free'
     );
   });
+
+  it('suivi libre avec origin GPS', () => {
+    const url = buildHuberaMapsAppUrl({
+      tripId: 12,
+      vehicleId: 3,
+      mode: 'free',
+      fromLat: 45.77,
+      fromLon: 3.08,
+    });
+    expect(url).toBe(
+      'hubera-maps://track?tripId=12&vehicleId=3&mode=free&fromLat=45.77&fromLon=3.08'
+    );
+  });
 });

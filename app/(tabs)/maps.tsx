@@ -42,6 +42,7 @@ import { searchAddressSuggestions, type SuggestHit } from '@/lib/placeSuggest';
 import { getAppFlavor } from '@/lib/appFlavor';
 import { tripHistoryNav } from '@/lib/tripHistoryNav';
 import { startGpsTrip, pauseGpsTrip, resumeGpsTrip, stopGpsTripLite } from '@/lib/startFreeTrip';
+import { openHuberaMapsForTrip, openHuberaMapsNavigate } from '@/lib/huberaMaps';
 import { launchGoogleMapsNavigation, openGoogleMapsHere } from '@/lib/mapsNavigation';
 import { formatDurationMin, liveTripHudStats } from '@/lib/liveTripHud';
 import {
@@ -624,10 +625,30 @@ export default function MapsScreen() {
         } else {
           showToast(
             dest
-              ? `Guidage vers ${dest.label} — suivi Fuel + Google Maps.`
-              : 'Suivi GPS démarré — ouverture Google Maps.'
+              ? `Guidage vers ${dest.label} — suivi Fuel + Hubera Maps.`
+              : 'Suivi GPS démarré — ouverture Hubera Maps.'
           );
         }
+        // Hubera Maps APK d’abord (deep link track/navigate), jamais Google en premier.
+        const hubera = dest
+          ? await openHuberaMapsNavigate({
+              tripId: r.tripId,
+              vehicleId: activeVehicle.id,
+              mode: 'nav',
+              toLat: dest.latitude,
+              toLon: dest.longitude,
+              label: dest.label,
+              fromLat: user?.latitude,
+              fromLon: user?.longitude,
+            })
+          : await openHuberaMapsForTrip({
+              tripId: r.tripId,
+              vehicleId: activeVehicle.id,
+              mode: 'free',
+              fromLat: user?.latitude,
+              fromLon: user?.longitude,
+            });
+        if (hubera) return;
         const opened = dest
           ? await launchGoogleMapsNavigation({
               destination: { latitude: dest.latitude, longitude: dest.longitude },
@@ -637,7 +658,7 @@ export default function MapsScreen() {
             })
           : await openGoogleMapsHere(user || undefined);
         if (!opened) {
-          showToast('Impossible d’ouvrir Google Maps — le suivi continue ici.');
+          showToast('Impossible d’ouvrir Hubera Maps — le suivi continue ici.');
         }
       } finally {
         setStarting(false);

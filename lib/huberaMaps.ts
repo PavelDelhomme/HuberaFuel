@@ -3,8 +3,10 @@
  * Fuel reste propriétaire du trajet GPS ; Maps affiche et commande pause/stop/plein.
  */
 import { Linking, Platform } from 'react-native';
+import * as IntentLauncher from 'expo-intent-launcher';
 import {
   buildHuberaMapsAppUrl,
+  buildHuberaMapsWebUrl,
   type HuberaMapsTrackOpts,
 } from '@/lib/huberaMapsUrl';
 
@@ -14,6 +16,8 @@ export { buildHuberaMapsAppUrl, buildHuberaMapsWebUrl } from '@/lib/huberaMapsUr
 export type HuberaMapsOpenResult = 'app' | 'web' | false;
 
 const APP_SCHEMES = ['hubera-maps', 'cloudity-maps'] as const;
+const MAPS_PACKAGES = ['cloud.hubera.maps', 'ovh.delhomme.maps'] as const;
+const MAPS_ACTIVITY = 'ovh.delhomme.maps.MainActivity';
 
 async function tryOpen(url: string): Promise<boolean> {
   try {
@@ -26,16 +30,37 @@ async function tryOpen(url: string): Promise<boolean> {
   }
 }
 
+/** Android : VIEW ciblé paquet Maps (plus fiable que canOpenURL seul). */
+async function tryOpenMapsPackage(url: string): Promise<boolean> {
+  if (Platform.OS !== 'android') return false;
+  for (const pkg of MAPS_PACKAGES) {
+    try {
+      await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+        data: url,
+        packageName: pkg,
+        className: MAPS_ACTIVITY,
+      });
+      return true;
+    } catch {
+      /* paquet absent ou filtre intent manquant */
+    }
+  }
+  return false;
+}
+
 /**
- * Ouvre l’app Hubera Maps si elle est installée.
- * Pas de fallback Google : le suivi Fuel continue dans l’onglet Maps.
+ * Ouvre l’app Hubera Maps si elle est installée (deep link track/navigate).
+ * Fallback web maps.hubera.cloud. Pas de Google ici.
  */
 export async function openHuberaMapsForTrip(
   opts: HuberaMapsTrackOpts
 ): Promise<HuberaMapsOpenResult> {
   for (const scheme of APP_SCHEMES) {
-    if (await tryOpen(buildHuberaMapsAppUrl(opts, scheme))) return 'app';
+    const url = buildHuberaMapsAppUrl(opts, scheme);
+    if (await tryOpenMapsPackage(url)) return 'app';
+    if (await tryOpen(url)) return 'app';
   }
+  if (await tryOpen(buildHuberaMapsWebUrl(opts))) return 'web';
   return false;
 }
 
