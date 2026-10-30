@@ -40,3 +40,12 @@ invite-code.local
 # Lab screenshots (PDF recaps, pas le produit)
 scripts/reports/assets/*.png
 scripts/reports/assets/*-body.txt
+
+# Build OTA lab artifacts
+.ota-out/
+**/.ota-out/
+
+__pycache__/
+**/__pycache__/
+
+*.torrent
