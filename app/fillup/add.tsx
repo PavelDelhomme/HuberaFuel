@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   StyleSheet,
@@ -19,6 +19,7 @@ import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { DatePickerField } from '@/components/DatePickerField';
 import { createFillUp, getFillUps, getTrips, getVehicleById, updateVehicle, updateTrip } from '@/lib/database';
+import { scheduleCloudPush } from '@/lib/backup';
 import {
   adaptVehicleConsumption,
   displayOdometerKm,
@@ -72,6 +73,7 @@ export default function AddFillUpScreen() {
   const [nearby, setNearby] = useState<FuelStationPrice[]>([]);
   const [locating, setLocating] = useState(false);
   const [loading, setLoading] = useState(false);
+  const savingRef = useRef(false);
   const [kmHint, setKmHint] = useState('');
   const [lastFill, setLastFill] = useState<FillUp | null>(null);
   /** Champs verrouillés par défaut — crayon pour éditer un seul champ */
@@ -357,7 +359,11 @@ export default function AddFillUpScreen() {
     ignorePrevious?: boolean;
   }) => {
     if (!activeVehicle) return;
+    // Anti double-tap : deux INSERT identiques (le 2ᵉ était ensuite fusionné/perdu à la synchro).
+    if (savingRef.current) return;
+    savingRef.current = true;
     setLoading(true);
+    let fillSaved = false;
     try {
       let vehicle = activeVehicle;
       if (opts?.resizeTankTo && opts.resizeTankTo > vehicle.tankCapacity) {
@@ -387,28 +393,38 @@ export default function AddFillUpScreen() {
         tripId: linkedTripId && Number.isFinite(linkedTripId) ? linkedTripId : null,
       });
 
-      if (linkedTripId && Number.isFinite(linkedTripId)) {
-        await updateTrip(linkedTripId, { fillUpId: fillId });
+      // Le plein est en base : à partir d’ici plus aucune erreur ne doit annoncer « échec »
+      // (l’utilisateur ressaisissait → doublon, ou croyait le plein perdu).
+      fillSaved = true;
+
+      let adapted: Awaited<ReturnType<typeof adaptVehicleConsumption>> | null = null;
+      try {
+        if (linkedTripId && Number.isFinite(linkedTripId)) {
+          await updateTrip(linkedTripId, { fillUpId: fillId });
+        }
+
+        if (derived.ppl > 0) {
+          await updateVehicle(vehicle.id, { defaultFuelPrice: derived.ppl });
+        }
+
+        await applyFillUpToFuelEstimate(
+          vehicle,
+          {
+            liters: Math.round(derived.liters * 100) / 100,
+            isFull,
+            id: fillId,
+          },
+          { ignorePrevious: opts?.ignorePrevious }
+        );
+
+        adapted = await adaptVehicleConsumption(vehicle.id);
+        await refreshBudgets(vehicle.id);
+      } catch (postErr) {
+        console.warn('[fillup] post-traitement jauge/budget', postErr);
       }
-
-      if (derived.ppl > 0) {
-        await updateVehicle(vehicle.id, { defaultFuelPrice: derived.ppl });
-      }
-
-      await applyFillUpToFuelEstimate(
-        vehicle,
-        {
-          liters: Math.round(derived.liters * 100) / 100,
-          isFull,
-          id: fillId,
-        },
-        { ignorePrevious: opts?.ignorePrevious }
-      );
-
-      const adapted = await adaptVehicleConsumption(vehicle.id);
-      await refreshBudgets(vehicle.id);
-      await refresh();
+      await refresh().catch(() => undefined);
       void refreshVehicleReminders();
+      scheduleCloudPush();
       let msg =
         `${derived.liters.toFixed(2)} L · ${formatEuro(derived.total)}` +
         (station ? ` · ${station.name}` : '') +
@@ -419,8 +435,16 @@ export default function AddFillUpScreen() {
       showToast(`Plein enregistré — ${msg.replace(/\n/g, ' · ')}`, { durationMs: 3200 });
       router.back();
     } catch (e) {
-      notify('Erreur', e instanceof Error ? e.message : 'Impossible d’enregistrer le plein.');
+      if (fillSaved) {
+        // Plein enregistré mais navigation / toast en échec : ne pas faire croire à une perte.
+        console.warn('[fillup] après enregistrement', e);
+        scheduleCloudPush();
+        router.back();
+      } else {
+        notify('Erreur', e instanceof Error ? e.message : 'Impossible d’enregistrer le plein.');
+      }
     } finally {
+      savingRef.current = false;
       setLoading(false);
     }
   };

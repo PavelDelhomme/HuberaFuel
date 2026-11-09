@@ -12,7 +12,13 @@ import { getActiveTripLite, stopActiveTrips } from '@/lib/database';
 import { finalizeStaleActiveTrip } from '@/lib/finalizeStaleTrip';
 import { decideSyncAction } from '@/lib/syncDecision';
 import { mergeUniqueFillUps } from '@/lib/fillUpMerge';
-import { isBackgroundTrackingLive, stopBackgroundTracking } from '@/lib/locationService';
+import { mergeUnsyncedLocalTrips } from '@/lib/tripMerge';
+import { getLocalWriteSeq } from '@/lib/localWriteSeq';
+import {
+  flushTripUpdates,
+  isBackgroundTrackingLive,
+  stopBackgroundTracking,
+} from '@/lib/locationService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 /**
@@ -427,7 +433,36 @@ export type SyncPreferResult =
   | 'blocked-trip'
   | 'skipped';
 
-export async function syncPreferNewer(): Promise<SyncPreferResult> {
+/**
+ * Une seule synchro à la fois (foreground + réseau + login + sortie d’app se chevauchaient
+ * et un pull `replaceAllData` pouvait passer au milieu d’une écriture trajet / plein).
+ * Au plus une synchro en attente derrière celle en cours (coalescée).
+ */
+let syncRunning: Promise<SyncPreferResult> | null = null;
+let syncQueued: Promise<SyncPreferResult> | null = null;
+
+export function syncPreferNewer(): Promise<SyncPreferResult> {
+  if (!syncRunning) {
+    const run: Promise<SyncPreferResult> = syncPreferNewerImpl().finally(() => {
+      if (syncRunning === run) syncRunning = null;
+    });
+    syncRunning = run;
+    return run;
+  }
+  if (!syncQueued) {
+    const current = syncRunning;
+    const queued: Promise<SyncPreferResult> = current
+      .catch(() => undefined)
+      .then(() => {
+        syncQueued = null;
+        return syncPreferNewer();
+      });
+    syncQueued = queued;
+  }
+  return syncQueued;
+}
+
+async function syncPreferNewerImpl(): Promise<SyncPreferResult> {
   const token = await getToken();
   if (!token) return 'skipped';
   try {
@@ -443,6 +478,7 @@ export async function syncPreferNewer(): Promise<SyncPreferResult> {
   }
   const remote = await fetchSync();
   const remoteSnap = normalizeSnapshot(remote?.data);
+  const writeSeqAtCollect = getLocalWriteSeq();
   const local = await collectSnapshot();
   const localHash = snapshotContentHash(local);
   const remoteHash = snapshotContentHash(remoteSnap);
@@ -487,11 +523,22 @@ export async function syncPreferNewer(): Promise<SyncPreferResult> {
   }
 
   if (action === 'pull') {
+    // Écriture locale (trajet / plein) pendant la lecture : ne pas écraser, on re-synchronisera.
+    if (getLocalWriteSeq() !== writeSeqAtCollect) return 'skipped';
     preserveLocalFuelOnPull(local, remoteSnap);
     const mergedFills = mergeUniqueFillUps(local.fillUps || [], remoteSnap.fillUps || []);
     if (mergedFills.added > 0) {
       remoteSnap.fillUps = mergedFills.fills;
     }
+    // Trajets terminés ici mais jamais poussés : les garder (sinon pull = trajet perdu).
+    const mergedTrips = mergeUnsyncedLocalTrips(local.trips || [], remoteSnap.trips || [], {
+      sinceMs: meta.lastPushedAt,
+      remoteVehicleIds: new Set((remoteSnap.vehicles || []).map((v) => Number(v.id))),
+    });
+    if (mergedTrips.added > 0) {
+      remoteSnap.trips = mergedTrips.trips;
+    }
+    if (getLocalWriteSeq() !== writeSeqAtCollect) return 'skipped';
     await applySnapshot(remoteSnap, 'replace');
     try {
       await repairFillUpVehiclesAndBudgets();
@@ -504,7 +551,7 @@ export async function syncPreferNewer(): Promise<SyncPreferResult> {
       lastRemoteHash: remoteHash,
       lastPushedAt: remoteServerAt || Date.now(),
     });
-    if (mergedFills.added > 0) {
+    if (mergedFills.added > 0 || mergedTrips.added > 0) {
       await pushSyncSafe(await collectSnapshot());
     }
     return 'pulled';
@@ -556,4 +603,35 @@ export async function forcePushLocalToCloud(): Promise<{ ok: boolean; reason: st
   await pushSyncSafe(local);
   await saveLocalBackup(local);
   return { ok: true, reason: 'pushed' };
+}
+
+/**
+ * Sortie d’app (background) : vide la file GPS, sauvegarde locale, pousse vers le cloud.
+ * Avant : aucune synchro à la sortie → Maps (qui lit le cloud) affichait l’ancienne jauge
+ * tant que Fuel n’était pas relancé. Les erreurs sont journalisées, plus avalées.
+ */
+export async function flushCloudSyncOnLeave(
+  reason = 'background'
+): Promise<SyncPreferResult | 'no-auth' | 'error'> {
+  try {
+    await flushTripUpdates().catch(() => undefined);
+    await saveLocalBackup().catch((e) => console.warn(`[sync:${reason}] backup local`, e));
+    const token = await getToken();
+    if (!token) return 'no-auth';
+    return await syncPreferNewer();
+  } catch (e) {
+    console.warn(`[sync:${reason}] push cloud échoué`, e);
+    return 'error';
+  }
+}
+
+let pushTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Après un plein / une fin de trajet : synchro cloud différée (regroupe les écritures proches). */
+export function scheduleCloudPush(delayMs = 2500): void {
+  if (pushTimer) clearTimeout(pushTimer);
+  pushTimer = setTimeout(() => {
+    pushTimer = null;
+    void flushCloudSyncOnLeave('after-write');
+  }, delayMs);
 }

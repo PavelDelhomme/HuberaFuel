@@ -18,7 +18,14 @@ import {
 } from '@/lib/api';
 import { applySnapshot, hasLocalUserData, normalizeSnapshot } from '@/lib/dataSnapshot';
 import { publishHuberaSession } from '@/lib/huberaIdSso';
-import { saveLocalBackup, refreshFromCloud, syncPreferNewer, forcePushLocalToCloud, type SyncPreferResult } from '@/lib/backup';
+import {
+  saveLocalBackup,
+  refreshFromCloud,
+  syncPreferNewer,
+  forcePushLocalToCloud,
+  flushCloudSyncOnLeave,
+  type SyncPreferResult,
+} from '@/lib/backup';
 
 type AuthContextType = {
   user: AuthUser | null;
@@ -152,6 +159,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (state === 'active') {
         void refreshMe();
         void syncIfLoggedInIdle();
+      } else if (state === 'background') {
+        // Sortie d’app (Maps, accueil, kill) : pousser tout de suite — Maps lit le cloud.
+        void flushCloudSyncOnLeave('background');
       }
     });
     return () => sub.remove();

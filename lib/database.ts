@@ -13,6 +13,7 @@ import type {
   VehicleMaintenance,
 } from '@/types';
 import { refreshMaintenanceStatus } from '@/lib/vehicleMaintenance';
+import { bumpLocalWriteSeq } from '@/lib/localWriteSeq';
 import {
   LAST_VEHICLE_STORAGE_KEY,
   MAPS_FUEL_VEHICLE_KEY,
@@ -736,37 +737,44 @@ export async function reconcileTrackedKmFromTrips(vehicleId: number): Promise<nu
 
 export async function createFillUp(fillUp: Omit<FillUp, 'id'>): Promise<number> {
   const database = await getDatabase();
-  const result = await database.runAsync(
-    `INSERT INTO fill_ups (vehicle_id, date, liters, price_per_liter, total_cost, odometer, distance_since_last_km, is_full, note, trip_id)
+  // Atomique : INSERT plein + compteur véhicule + lien trajet. Avant, un échec au milieu
+  // laissait un plein sans compteur à jour (ou l’inverse) et l’écran affichait « Erreur ».
+  let fillId = 0;
+  await database.withTransactionAsync(async () => {
+    const result = await database.runAsync(
+      `INSERT INTO fill_ups (vehicle_id, date, liters, price_per_liter, total_cost, odometer, distance_since_last_km, is_full, note, trip_id)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      fillUp.vehicleId,
-      fillUp.date,
-      fillUp.liters,
-      fillUp.pricePerLiter,
-      fillUp.totalCost,
-      fillUp.odometer,
-      fillUp.distanceSinceLastKm,
-      fillUp.isFull ? 1 : 0,
-      fillUp.note ?? null,
-      fillUp.tripId ?? null,
-    ]
-  );
-  if (fillUp.odometer != null) {
-    // odometer = compteur affiché (base + trajets). On fige la base et on remet
-    // tracked_km à 0 sinon le prochain affichage double-compte les km GPS.
-    await database.runAsync(
-      'UPDATE vehicles SET current_odometer = ?, tracked_km = 0 WHERE id = ?',
-      [fillUp.odometer, fillUp.vehicleId]
+      [
+        fillUp.vehicleId,
+        fillUp.date,
+        fillUp.liters,
+        fillUp.pricePerLiter,
+        fillUp.totalCost,
+        fillUp.odometer,
+        fillUp.distanceSinceLastKm,
+        fillUp.isFull ? 1 : 0,
+        fillUp.note ?? null,
+        fillUp.tripId ?? null,
+      ]
     );
-  }
-  if (fillUp.tripId) {
-    await database.runAsync('UPDATE trips SET fill_up_id = ? WHERE id = ?', [
-      result.lastInsertRowId,
-      fillUp.tripId,
-    ]);
-  }
-  return result.lastInsertRowId;
+    fillId = Number(result.lastInsertRowId);
+    if (fillUp.odometer != null) {
+      // odometer = compteur affiché (base + trajets). On fige la base et on remet
+      // tracked_km à 0 sinon le prochain affichage double-compte les km GPS.
+      await database.runAsync(
+        'UPDATE vehicles SET current_odometer = ?, tracked_km = 0 WHERE id = ?',
+        [fillUp.odometer, fillUp.vehicleId]
+      );
+    }
+    if (fillUp.tripId) {
+      await database.runAsync('UPDATE trips SET fill_up_id = ? WHERE id = ?', [
+        fillId,
+        fillUp.tripId,
+      ]);
+    }
+  });
+  bumpLocalWriteSeq();
+  return fillId;
 }
 
 export async function deleteVehicle(id: number): Promise<void> {
@@ -876,6 +884,7 @@ export async function updateFillUp(
   if (!fields.length) return;
   values.push(id);
   await database.runAsync(`UPDATE fill_ups SET ${fields.join(', ')} WHERE id = ?`, values);
+  bumpLocalWriteSeq();
 }
 
 export async function deleteFillUp(id: number): Promise<void> {
@@ -1090,6 +1099,7 @@ export async function createTrip(trip: Omit<Trip, 'id'>): Promise<number> {
       trip.isPaused ? 1 : 0,
     ]
   );
+  bumpLocalWriteSeq();
   return result.lastInsertRowId;
 }
 
@@ -1115,11 +1125,13 @@ export async function updateTrip(id: number, trip: Partial<Trip>): Promise<void>
   if (fields.length === 0) return;
   values.push(id);
   await database.runAsync(`UPDATE trips SET ${fields.join(', ')} WHERE id = ?`, values);
+  bumpLocalWriteSeq();
 }
 
 export async function deleteTrip(id: number): Promise<void> {
   const database = await getDatabase();
   await database.runAsync('DELETE FROM trips WHERE id = ?', [id]);
+  bumpLocalWriteSeq();
 }
 
 function mapFuelGaugeReading(row: unknown): FuelGaugeReading {
@@ -1219,6 +1231,7 @@ export async function stopActiveTrips(): Promise<void> {
   await database.runAsync(
     "UPDATE trips SET is_active = 0, end_time = datetime('now') WHERE is_active = 1"
   );
+  bumpLocalWriteSeq();
 }
 
 // --- Places & trajets réguliers ---

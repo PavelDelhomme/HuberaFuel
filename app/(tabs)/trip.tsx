@@ -47,6 +47,7 @@ import {
   getTripById,
   getActiveTripLite,
 } from '@/lib/database';
+import { scheduleCloudPush } from '@/lib/backup';
 import {
   startBackgroundTracking,
   stopBackgroundTracking,
@@ -434,6 +435,14 @@ export default function TripScreen() {
     [history, historyFilter, sinceFill?.lastFill?.date, historyFrom, historyTo]
   );
   const historyTripYmds = useMemo(() => collectTripYmds(history), [history]);
+  /** Véhicule du filtre historique (chips) — pas forcément le véhicule actif global. */
+  const historyVehicle = useMemo(
+    () =>
+      historyVehicleId != null
+        ? vehicles.find((v) => v.id === historyVehicleId) ?? null
+        : null,
+    [vehicles, historyVehicleId]
+  );
 
   const isWeb = Platform.OS === 'web';
 
@@ -1606,6 +1615,30 @@ export default function TripScreen() {
       }
       setShortTripPrompt(false);
 
+      // Point de contrôle : on écrit le trajet « terminé » dans SQLite AVANT tout appel réseau
+      // (prolongation d’itinéraire, géocodage, altitude…). Avant, ces appels (plusieurs secondes,
+      // app souvent mise en arrière-plan / tuée) précédaient l’unique updateTrip : le trajet restait
+      // actif sans fin, ou était perdu, et la moindre exception levée entre-temps l’abandonnait.
+      const checkpointPts = parseRoutePoints(trip.routePoints || '[]');
+      try {
+        await updateTrip(finishedId, {
+          isActive: false,
+          isPaused: false,
+          endTime: new Date().toISOString(),
+          status: 'confirmed',
+          distanceKm: trip.distanceKm,
+          estimatedFuelUsed: trip.estimatedFuelUsed,
+          estimatedCost: trip.estimatedCost,
+          ...(checkpointPts.length > 0
+            ? { routePoints: compactRoutePointsJson(trip.routePoints || '[]') }
+            : {}),
+          ...(trip.originName?.trim() ? { originName: trip.originName } : {}),
+          ...(trip.destinationName?.trim() ? { destinationName: trip.destinationName } : {}),
+        });
+      } catch (e) {
+        console.warn('[trip] checkpoint fin de trajet', e);
+      }
+
       let pts = parseRoutePoints(compactRoutePointsJson(trip.routePoints || '[]'));
       try {
         const places = await getPlaces();
@@ -1710,12 +1743,13 @@ export default function TripScreen() {
         const after = await getVehicleById(vehicle.id).catch(() => null);
         const endLiters = after?.estimatedFuelLiters ?? vehicle.estimatedFuelLiters;
         if (endLiters != null) {
+          // Historique de jauge : jamais bloquant (avant, une erreur ici empêchait l’updateTrip final).
           await recordFuelGaugeReading({
             vehicleId: vehicle.id,
             liters: endLiters,
             source: 'trip_end',
             tripId: finishedId,
-          });
+          }).catch((e) => console.warn('[trip] recordFuelGaugeReading', e));
         }
       }
 
@@ -1736,18 +1770,28 @@ export default function TripScreen() {
           : null,
       ].filter(Boolean);
 
-      await updateTrip(finishedId, {
-        isActive: false,
-        isPaused: false,
-        endTime: new Date().toISOString(),
-        status: 'confirmed',
-        originName: originName || trip.originName,
-        destinationName: destName,
-        estimatedFuelUsed: fuelUsed,
-        estimatedCost: cost,
-        routePoints: compactRoutePointsJson(trip.routePoints || '[]'),
-        note: noteParts.join(' · ') || undefined,
-      });
+      // Ne jamais réécrire un tracé vide (repli sur le trajet « lite » = '[]') par-dessus les points SQLite.
+      const finalRoutePoints =
+        parseRoutePoints(trip.routePoints || '[]').length > 0
+          ? compactRoutePointsJson(trip.routePoints || '[]')
+          : undefined;
+      try {
+        await updateTrip(finishedId, {
+          isActive: false,
+          isPaused: false,
+          endTime: new Date().toISOString(),
+          status: 'confirmed',
+          originName: originName || trip.originName,
+          destinationName: destName,
+          estimatedFuelUsed: fuelUsed,
+          estimatedCost: cost,
+          ...(finalRoutePoints ? { routePoints: finalRoutePoints } : {}),
+          note: noteParts.join(' · ') || undefined,
+        });
+      } catch (e) {
+        // Le point de contrôle a déjà fermé le trajet : on garde les données, on signale seulement.
+        console.warn('[trip] enrichissement fin de trajet', e);
+      }
       if (trip.distanceKm > 0) {
         await addTrackedKm(trip.vehicleId, trip.distanceKm).catch(() => undefined);
       }
@@ -1768,6 +1812,7 @@ export default function TripScreen() {
       setMapRemountKey((k) => k + 1);
       await refresh();
       await loadLists();
+      scheduleCloudPush();
 
       if (opts?.openRecap !== false) {
         setTimeout(() => {
@@ -3723,7 +3768,7 @@ export default function TripScreen() {
                 </View>
               )}
 
-              {sinceFill?.lastFill && activeVehicle && !historyAllVehicles && (
+              {historyVehicle && !historyAllVehicles && (
                 <Card
                   style={{
                     marginBottom: 14,
@@ -3732,23 +3777,31 @@ export default function TripScreen() {
                   }}
                 >
                   <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 4 }]}>
-                    Depuis le dernier plein · {activeVehicle.name}
+                    {sinceFill?.lastFill
+                      ? `Depuis le dernier plein · ${historyVehicle.name}`
+                      : `Jauge · ${historyVehicle.name}`}
                   </Text>
-                  <Text style={{ color: colors.textSecondary, fontSize: 12, marginBottom: 8 }}>
-                    {formatDateSlash(sinceFill.lastFill.date)} ·{' '}
-                    {formatEuro(sinceFill.lastFill.totalCost)}
-                    {sinceFill.lastFill.isFull ? ' · quasi-plein' : ''}
-                  </Text>
+                  {sinceFill?.lastFill ? (
+                    <Text style={{ color: colors.textSecondary, fontSize: 12, marginBottom: 8 }}>
+                      {formatDateSlash(sinceFill.lastFill.date)} ·{' '}
+                      {formatEuro(sinceFill.lastFill.totalCost)}
+                      {sinceFill.lastFill.isFull ? ' · quasi-plein' : ''}
+                    </Text>
+                  ) : (
+                    <Text style={{ color: colors.textSecondary, fontSize: 12, marginBottom: 8 }}>
+                      Niveau du véhicule sélectionné (change avec le chip ci-dessus)
+                    </Text>
+                  )}
                   {(() => {
-                    const tank = activeVehicle?.tankCapacity || 50;
-                    const gaugeKnown = activeVehicle?.estimatedFuelLiters != null;
-                    const rem = gaugeKnown ? activeVehicle.estimatedFuelLiters : null;
+                    const tank = historyVehicle.tankCapacity || 50;
+                    const gaugeKnown = historyVehicle.estimatedFuelLiters != null;
+                    const rem = gaugeKnown ? historyVehicle.estimatedFuelLiters : null;
                     const tone = fuelRemainingTone({
                       litersRemaining: rem,
                       tankCapacity: tank,
-                      lowLitersThreshold: activeVehicle?.lowFuelThresholdLiters,
-                      rangeKm: gaugeKnown ? sinceFill.rangeKm : undefined,
-                      vehicle: activeVehicle,
+                      lowLitersThreshold: historyVehicle.lowFuelThresholdLiters,
+                      rangeKm: gaugeKnown ? sinceFill?.rangeKm : undefined,
+                      vehicle: historyVehicle,
                     });
                     const toneColor = fuelToneColor(tone, colors);
                     return (
@@ -3756,14 +3809,14 @@ export default function TripScreen() {
                         <FuelGaugeSlider
                           compact
                           requireConfirm
+                          resetKey={`${historyVehicle.id}:${rem ?? 'unk'}:${tank}`}
                           tankCapacity={tank}
                           liters={rem}
                           accentColor={toneColor}
-                          vehicle={activeVehicle}
+                          vehicle={historyVehicle}
                           onChange={() => undefined}
                           onUnknown={() => {
-                            if (!activeVehicle) return;
-                            const vehicleId = activeVehicle.id;
+                            const vehicleId = historyVehicle.id;
                             promptUnknownGauge((choice) => {
                               void (async () => {
                                 await updateVehicle(vehicleId, {
@@ -3778,8 +3831,7 @@ export default function TripScreen() {
                             });
                           }}
                           onChangeEnd={async (L) => {
-                            if (!activeVehicle) return;
-                            const adj = await setFuelLiters(activeVehicle, L);
+                            const adj = await setFuelLiters(historyVehicle, L);
                             await refresh();
                             notify('Réservoir', fuelGaugeSaveSummary(adj));
                           }}
@@ -3787,9 +3839,9 @@ export default function TripScreen() {
                         <Text style={{ color: colors.textSecondary, fontSize: 11, marginTop: 4 }}>
                           {(() => {
                             const commute =
-                              rem != null && activeVehicle
+                              rem != null
                                 ? estimateCommutesRemaining({
-                                    vehicle: activeVehicle,
+                                    vehicle: historyVehicle,
                                     litersRemaining: rem,
                                     places,
                                     trips: history,
@@ -3809,6 +3861,7 @@ export default function TripScreen() {
                       </View>
                     );
                   })()}
+                  {sinceFill?.lastFill ? (
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
                     <Text style={{ color: colors.text, fontWeight: '700' }}>
                       {formatDistance(sinceFill.tripKm)}
@@ -3823,6 +3876,7 @@ export default function TripScreen() {
                       ~{sinceFill.fuelUsedEst.toFixed(1)} L consommés
                     </Text>
                   </View>
+                  ) : null}
                 </Card>
               )}
 

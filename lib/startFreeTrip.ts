@@ -372,6 +372,13 @@ export async function stopGpsTripLite(opts: {
     await addTrackedKm(opts.vehicleId, distanceKm).catch(() => undefined);
   }
   await opts.refresh?.();
+  // Cloud tout de suite : sinon Maps / autre appareil ne voient pas le trajet ni la jauge.
+  try {
+    const { scheduleCloudPush } = await import('@/lib/backup');
+    scheduleCloudPush(800);
+  } catch {
+    /* ignore */
+  }
   // Couper le cache live tout de suite — sinon peekLiveTripId() ressuscite « Terminer »
   // avant que persistLiveRoute ait fini (double appui).
   clearLivePointsAfterFinish();

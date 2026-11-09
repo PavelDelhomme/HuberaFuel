@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -47,6 +47,7 @@ import {
   addTrackedKm,
   updateVehicle,
 } from '@/lib/database';
+import { scheduleCloudPush } from '@/lib/backup';
 import { reverseGeocode } from '@/lib/geocode';
 
 type Phase = 'go' | 'fill' | 'done';
@@ -79,6 +80,7 @@ export default function StationTripScreen() {
   const [tripId, setTripId] = useState<number | null>(null);
   const [starting, setStarting] = useState(false);
   const [loading, setLoading] = useState(false);
+  const savingRef = useRef(false);
   const [saveSummary, setSaveSummary] = useState('');
 
   const lat = parseFloat(params.lat || '');
@@ -248,6 +250,38 @@ export default function StationTripScreen() {
       notify('Erreur', 'Sélectionnez un véhicule.');
       return;
     }
+    if (savingRef.current) return;
+
+    // Valider le plein AVANT d’écrire le trajet : avant, un « return » de validation arrivait
+    // après createTrip/addTrackedKm → le trajet était déjà en base ; chaque nouvel essai créait
+    // un trajet de plus et re-comptait les km.
+    let fillL = 0;
+    let fillPpl = 0;
+    if (doFillUp) {
+      fillL = parseFloat(liters.replace(',', '.'));
+      fillPpl = parseFloat(price.replace(',', '.'));
+      if (!fillL || fillL <= 0 || !fillPpl || fillPpl <= 0) {
+        notify('Plein', 'Indiquez litres et prix, ou désactivez « Faire un plein ».');
+        return;
+      }
+      if (!isSaneFuelPricePerLiter(fillPpl, countryCode)) {
+        notify(
+          'Prix / L incohérent',
+          `${fillPpl.toFixed(3)} €/L n’est pas réaliste. Le gazole est en général ~1,5–2,5 €/L.`
+        );
+        return;
+      }
+      const early = previewFillUpFuel(activeVehicle, { liters: fillL, isFull });
+      if (!isFull && early.exceedsCapacity) {
+        notify(
+          'Plus que la capacité',
+          `${fillL.toFixed(1)} L dépasse le réservoir noté à ${activeVehicle.tankCapacity} L. Corrige la saisie, ou passe par « Ajouter un plein » pour réajuster le réservoir. Le plein n’est pas enregistré.`
+        );
+        return;
+      }
+    }
+
+    savingRef.current = true;
     setLoading(true);
     try {
       const km = parseFloat(distanceKm.replace(',', '.')) || 0;
@@ -288,32 +322,10 @@ export default function StationTripScreen() {
       }
 
       if (doFillUp) {
-        const L = parseFloat(liters.replace(',', '.'));
-        const ppl = parseFloat(price.replace(',', '.'));
-        if (!L || L <= 0 || !ppl || ppl <= 0) {
-          notify('Plein', 'Indiquez litres et prix, ou désactivez « Faire un plein ».');
-          setLoading(false);
-          return;
-        }
-        if (!isSaneFuelPricePerLiter(ppl, countryCode)) {
-          notify(
-            'Prix / L incohérent',
-            `${ppl.toFixed(3)} €/L n’est pas réaliste. Le gazole est en général ~1,5–2,5 €/L.`
-          );
-          setLoading(false);
-          return;
-        }
+        const L = fillL;
+        const ppl = fillPpl;
         // Relire le véhicule après addTrackedKm (sinon odo React périmé → km perdus au createFillUp).
         const fresh = (await getVehicleById(activeVehicle.id)) || activeVehicle;
-        const preview = previewFillUpFuel(fresh, { liters: L, isFull });
-        if (!isFull && preview.exceedsCapacity) {
-          notify(
-            'Plus que la capacité',
-            `${L.toFixed(1)} L dépasse le réservoir noté à ${fresh.tankCapacity} L. Corrige la saisie, ou passe par « Ajouter un plein » pour réajuster le réservoir. Le plein n’est pas enregistré.`
-          );
-          setLoading(false);
-          return;
-        }
         const odoNow = fresh.hasOdometer !== false ? displayOdometerKm(fresh) : 0;
         let distanceSinceLastKm: number | null = null;
         const fills = await getFillUps(activeVehicle.id);
@@ -337,13 +349,20 @@ export default function StationTripScreen() {
           note: `${stationName} · ${fuelLabel(params.fuelKey || 'gazole')}`,
           tripId: id,
         });
-        if (id) await updateTrip(id, { fillUpId: fillId });
-        await applyFillUpToFuelEstimate(fresh, { liters: L, isFull, id: fillId });
-        if (ppl > 0) await updateVehicle(activeVehicle.id, { defaultFuelPrice: ppl });
-        const adapted = await adaptVehicleConsumption(activeVehicle.id);
-        await refreshBudgets(activeVehicle.id);
-        await refresh();
+        // Plein + trajet déjà en base : le post-traitement ne doit plus pouvoir « échouer » l’écran.
+        let adapted: Awaited<ReturnType<typeof adaptVehicleConsumption>> | null = null;
+        try {
+          if (id) await updateTrip(id, { fillUpId: fillId });
+          await applyFillUpToFuelEstimate(fresh, { liters: L, isFull, id: fillId });
+          if (ppl > 0) await updateVehicle(activeVehicle.id, { defaultFuelPrice: ppl });
+          adapted = await adaptVehicleConsumption(activeVehicle.id);
+          await refreshBudgets(activeVehicle.id);
+        } catch (postErr) {
+          console.warn('[station] post-traitement plein', postErr);
+        }
+        await refresh().catch(() => undefined);
         void refreshVehicleReminders();
+        scheduleCloudPush();
         let msg = `Trajet ${formatDistance(km)} + plein ${L.toFixed(1)} L`;
         if (distanceSinceLastKm && distanceSinceLastKm > km + 1) {
           msg += ` · ${formatDistance(distanceSinceLastKm)} depuis dernier plein`;
@@ -357,13 +376,15 @@ export default function StationTripScreen() {
         return;
       }
 
-      await refreshBudgets(activeVehicle.id);
-      await refresh();
+      await refreshBudgets(activeVehicle.id).catch(() => undefined);
+      await refresh().catch(() => undefined);
+      scheduleCloudPush();
       setSaveSummary(`Trajet station ${formatDistance(km)} (sans plein).`);
       setPhase('done');
     } catch (e) {
       notify('Erreur', e instanceof Error ? e.message : 'Échec');
     } finally {
+      savingRef.current = false;
       setLoading(false);
     }
   };

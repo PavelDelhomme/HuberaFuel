@@ -11,12 +11,22 @@ import {
   addTrackedKm,
 } from '@/lib/database';
 import { parseRoutePoints, ensureDefaultBudgets, refreshAllBudgets, calculateTripStats, formatSpeedKmh } from '@/lib/calculations';
-import { recoverDataAfterUpdateIfNeeded, getUpdatePending, refreshFromCloud } from '@/lib/backup';
+import {
+  recoverDataAfterUpdateIfNeeded,
+  getUpdatePending,
+  refreshFromCloud,
+  scheduleCloudPush,
+} from '@/lib/backup';
 import { getToken } from '@/lib/api';
 import { hasLocalUserData } from '@/lib/dataSnapshot';
 import { confirm, notify } from '@/lib/notify';
-import { flushTripUpdates, isBackgroundTrackingLive, stopBackgroundTracking } from '@/lib/locationService';
-import { readLiveTripBuffer } from '@/lib/liveTripBuffer';
+import {
+  clearLivePointsAfterFinish,
+  flushTripUpdates,
+  isBackgroundTrackingLive,
+  stopBackgroundTracking,
+} from '@/lib/locationService';
+import { clearLiveTripBuffer, readLiveTripBuffer } from '@/lib/liveTripBuffer';
 import { reverseGeocode } from '@/lib/geocode';
 import { applyTripFuelBurn } from '@/lib/fuelLevel';
 import { recordFuelGaugeReading } from '@/lib/fuelGaugeHistory';
@@ -128,6 +138,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               : 'Un trajet GPS est en cours. Le changement va interrompre le trajet actuel. Continuer ?',
             () => {
               void (async () => {
+                try {
                 await stopBackgroundTracking();
                 await flushTripUpdates().catch(() => undefined);
                 const fresh = (await getTripById(activeTrip.id).catch(() => null)) || activeTrip;
@@ -205,10 +216,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                   if (fresh.distanceKm > 0) {
                     await addTrackedKm(fresh.vehicleId, fresh.distanceKm);
                   }
+                  await clearLiveTripBuffer();
+                  clearLivePointsAfterFinish();
 
                 await dbSetActiveVehicle(id);
                 await refresh();
-                resolve();
+                } catch (e) {
+                  // Avant : aucune garde — une exception laissait la Promise ouverte (UI figée)
+                  // et le changement de véhicule / la clôture du trajet à moitié faits.
+                  console.warn('[selectVehicle] clôture trajet', e);
+                  try {
+                    await dbSetActiveVehicle(id);
+                    await refresh();
+                  } catch {
+                    /* ignore */
+                  }
+                } finally {
+                  scheduleCloudPush();
+                  resolve();
+                }
               })();
             },
             'Continuer',

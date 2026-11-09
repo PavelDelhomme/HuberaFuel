@@ -2,6 +2,7 @@
  * Stockage web : AsyncStorage — même API que database.ts
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { bumpLocalWriteSeq } from '@/lib/localWriteSeq';
 import type {
   Budget,
   FillUp,
@@ -299,6 +300,7 @@ export async function createFillUp(fillUp: Omit<FillUp, 'id'>): Promise<number> 
     s.trips = s.trips.map((t) => (t.id === fillUp.tripId ? { ...t, fillUpId: id } : t));
   }
   await save(s);
+  bumpLocalWriteSeq();
   return id;
 }
 
@@ -460,6 +462,7 @@ export async function createTrip(trip: Omit<Trip, 'id'>): Promise<number> {
     source: trip.source || 'gps',
   });
   await save(s);
+  bumpLocalWriteSeq();
   return id;
 }
 
@@ -467,12 +470,14 @@ export async function updateTrip(id: number, trip: Partial<Trip>): Promise<void>
   const s = await load();
   s.trips = s.trips.map((t) => (t.id === id ? { ...t, ...trip, id } : t));
   await save(s);
+  bumpLocalWriteSeq();
 }
 
 export async function deleteTrip(id: number): Promise<void> {
   const s = await load();
   s.trips = s.trips.filter((t) => t.id !== id);
   await save(s);
+  bumpLocalWriteSeq();
 }
 
 function mapFuelGaugeReading(row: FuelGaugeReading): FuelGaugeReading {

@@ -34,6 +34,17 @@ async function tryOpen(url: string): Promise<boolean> {
 async function tryOpenMapsPackage(url: string): Promise<boolean> {
   if (Platform.OS !== 'android') return false;
   for (const pkg of MAPS_PACKAGES) {
+    // 1) Sans className — le filtre intent du flavor (cloud / legacy) suffit.
+    try {
+      await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+        data: url,
+        packageName: pkg,
+      });
+      return true;
+    } catch {
+      /* continue */
+    }
+    // 2) Secours avec activité explicite (builds plus anciens).
     try {
       await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
         data: url,
@@ -55,12 +66,18 @@ async function tryOpenMapsPackage(url: string): Promise<boolean> {
 export async function openHuberaMapsForTrip(
   opts: HuberaMapsTrackOpts
 ): Promise<HuberaMapsOpenResult> {
+  const webUrl = buildHuberaMapsWebUrl(opts);
+  // App native d’abord (schemes + https forcé dans le paquet) — jamais le navigateur en premier.
   for (const scheme of APP_SCHEMES) {
     const url = buildHuberaMapsAppUrl(opts, scheme);
     if (await tryOpenMapsPackage(url)) return 'app';
+  }
+  if (await tryOpenMapsPackage(webUrl)) return 'app';
+  for (const scheme of APP_SCHEMES) {
+    const url = buildHuberaMapsAppUrl(opts, scheme);
     if (await tryOpen(url)) return 'app';
   }
-  if (await tryOpen(buildHuberaMapsWebUrl(opts))) return 'web';
+  if (await tryOpen(webUrl)) return 'web';
   return false;
 }
 
